@@ -59,19 +59,19 @@
       margin-top:2px;
     }
 
-    /* ===== Two-halves layout ===== */
+    /* ===== Layout: left 1/3 (metar+taf), right 2/3 (windy) ===== */
     .main{
       height:100%;
       min-height:0;
       display:grid;
-      grid-template-columns: 1fr 1fr; /* left / right halves */
+      grid-template-columns: 1fr 2fr; /* 1/3 : 2/3 */
       gap:12px;
     }
 
-    .col{
+    .left{
       min-height:0;
       display:grid;
-      grid-template-rows: 1fr 1fr;   /* top/bottom within each half */
+      grid-template-rows: 1fr 1fr;   /* METAR top, TAF bottom */
       gap:12px;
     }
 
@@ -150,7 +150,7 @@
     }
 
     .metarRaw{
-      font-size:clamp(13px, 1.05vw, 17px);
+      font-size:clamp(12px, 0.95vw, 15px);
       font-weight:900;
       padding:10px 12px;
       border-radius:14px;
@@ -178,7 +178,7 @@
       display:grid;
       grid-template-columns: 1fr 1fr;
       gap:10px;
-      padding:clamp(6px, 0.75vh, 10px) 14px;
+      padding:clamp(6px, 0.7vh, 10px) 12px;
       border-top:1px solid var(--divider);
       align-items:center;
       flex: 1 0 auto;
@@ -188,14 +188,14 @@
 
     .kvLabel{
       color:rgba(255,255,255,0.92);
-      font-size:clamp(12px, 0.95vw, 16px);
+      font-size:clamp(12px, 0.9vw, 15px);
       font-weight:800;
       text-align:center;
       line-height:1.1;
     }
     .kvValue{
       color:var(--mvfr);
-      font-size:clamp(13px, 1.05vw, 18px);
+      font-size:clamp(12px, 0.95vw, 16px);
       font-weight:900;
       text-align:center;
       letter-spacing:0.2px;
@@ -217,11 +217,12 @@
       min-height:0;
       white-space:pre-wrap;
       word-break:break-word;
-      font-size:clamp(12px, 1.05vw, 15px);
+      font-size:clamp(12px, 0.95vw, 14px);
       line-height:1.35;
       overflow:hidden;
-      -webkit-mask-image: linear-gradient(to bottom, #000 85%, transparent);
-      mask-image: linear-gradient(to bottom, #000 85%, transparent);
+
+      -webkit-mask-image: linear-gradient(to bottom, #000 88%, transparent);
+      mask-image: linear-gradient(to bottom, #000 88%, transparent);
     }
     .tafLine{ display:block; }
   </style>
@@ -232,14 +233,14 @@
     <header>
       <div>
         <div class="title">KFOE — Forbes Field</div>
-        <div class="subtitle">METAR/TAF + Radar/Forecast • Auto-refresh</div>
+        <div class="subtitle">METAR/TAF + Radar (Windy) • Auto-refresh</div>
       </div>
       <div class="subtitle" id="clock"></div>
     </header>
 
     <div class="main">
-      <!-- LEFT HALF: METAR + TAF -->
-      <div class="col">
+      <!-- LEFT 1/3: METAR + TAF -->
+      <div class="left">
         <!-- METAR -->
         <div class="card">
           <h2>METAR</h2>
@@ -298,17 +299,10 @@
         </div>
       </div>
 
-      <!-- RIGHT HALF: RADAR + FORECAST -->
-      <div class="col">
-        <div class="card">
-          <h2>Radar / Weather Map (Windy embed)</h2>
-          <iframe id="windyRadar" loading="lazy" referrerpolicy="no-referrer"></iframe>
-        </div>
-
-        <div class="card">
-          <h2>Forecast (Placeholder)</h2>
-          <iframe id="forecastFrame" loading="lazy" referrerpolicy="no-referrer"></iframe>
-        </div>
+      <!-- RIGHT 2/3: WINDY -->
+      <div class="card">
+        <h2>Radar / Weather Map (Windy embed)</h2>
+        <iframe id="windyRadar" loading="lazy" referrerpolicy="no-referrer"></iframe>
       </div>
     </div>
   </div>
@@ -320,11 +314,9 @@
     const STATION = "KFOE";
     const PROXY_BASE = "https://kfoe-awc-proxy.oliversheley.workers.dev";
 
-    // Forbes Field vicinity
     const LAT = 38.95083;
     const LON = -95.66361;
 
-    // Windy radar/map
     const WINDY_RADAR_URL =
       "https://embed.windy.com/embed2.html" +
       `?lat=${encodeURIComponent(LAT)}` +
@@ -339,9 +331,6 @@
       "&calendar=now&pressure=true" +
       "&type=map&location=coordinates&detail=true" +
       "&metricWind=default&metricTemp=default&radarRange=-1";
-
-    // Forecast placeholder (replace later with your preferred forecast source)
-    const FORECAST_URL = "about:blank";
 
     // ====== STATE ======
     let lastObsMs = null;
@@ -445,7 +434,6 @@
       return res.json();
     }
 
-    // TAF helpers
     function tafRawToLines(rawTAF){
       const s = String(rawTAF || "").trim();
       if (!s) return [];
@@ -531,6 +519,7 @@
 
         $("obstime").textContent = formatObsLineFromMs(lastObsMs);
         refreshAgeOnly();
+
         $("m_time").textContent = formatLocalTimeWithTZFromMs(lastObsMs);
 
         const windTxt = (m.wdir != null && m.wspd != null)
@@ -620,9 +609,7 @@
 
     function init(){
       setClock();
-
       $("windyRadar").src = WINDY_RADAR_URL;
-      $("forecastFrame").src = FORECAST_URL;
 
       loadMetar();
       loadTaf();
