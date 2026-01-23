@@ -4,137 +4,205 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>KFOE Field Conditions & Weather</title>
+
   <style>
-    :root {
-      --bg:#0b0f14; --card:#111823; --text:#e8eef6; --muted:#9fb0c3; --accent:#57a6ff;
+    :root{
+      --bg:#0b0f14;
+      --card:#111823;
+      --text:#e8eef6;
+      --muted:#9fb0c3;
+      --accent:#57a6ff;
 
-      /* Flight category colors */
-      --vfr:#2bdc4f;     /* green */
-      --mvfr:#4aa3ff;    /* blue */
-      --ifr:#ff4d4d;     /* red */
-      --lifr:#c84dff;    /* magenta */
-      --unk:#d7e3f3;     /* default */
+      --vfr:#2bdc4f;
+      --mvfr:#4aa3ff;
+      --ifr:#ff4d4d;
+      --lifr:#c84dff;
+      --unk:#d7e3f3;
 
-      --age:#ff9a3d;     /* orange-ish like your screenshot */
-      --divider: rgba(255,255,255,0.08);
-      --soft: rgba(255,255,255,0.04);
+      --age:#ff9a3d;
+      --divider:rgba(255,255,255,0.08);
+      --soft:rgba(255,255,255,0.04);
     }
 
-    * { box-sizing: border-box; }
-    body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background:var(--bg); color:var(--text); }
-    .wrap { height:100vh; display:grid; grid-template-rows:auto 1fr; gap:12px; padding:16px; }
-    header { display:flex; align-items:baseline; justify-content:space-between; gap:16px; }
-    .title { font-size:28px; font-weight:700; letter-spacing:0.5px; }
-    .subtitle { color:var(--muted); font-size:14px; }
-
-    .grid { height:100%; display:grid; grid-template-columns: 1.05fr 0.95fr; gap:12px; }
-    .card { background:var(--card); border:1px solid rgba(255,255,255,0.06); border-radius:16px; padding:14px; overflow:hidden; }
-    .card h2 { margin:0 0 10px 0; font-size:16px; color:var(--muted); font-weight:600; letter-spacing:0.4px; }
-
-    .row { display:grid; grid-template-rows:auto 1fr; gap:10px; height:100%; }
-    iframe { width:100%; height:100%; border:0; border-radius:12px; background:#000; }
-
-    .small { color:var(--muted); font-size:12px; }
-    .accent { color: var(--accent); font-weight:700; }
-
-    .mono {
+    *{box-sizing:border-box;}
+    body{
       margin:0;
+      font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+      background:var(--bg);
+      color:var(--text);
+    }
+
+    .wrap{
+      height:100vh;
+      display:grid;
+      grid-template-rows:auto 1fr;
+      gap:12px;
+      padding:16px;
+    }
+
+    header{
+      display:flex;
+      align-items:baseline;
+      justify-content:space-between;
+      gap:16px;
+    }
+
+    .title{
+      font-size:clamp(22px, 1.8vw, 30px);
+      font-weight:800;
+      letter-spacing:0.2px;
+    }
+
+    .subtitle{
+      color:var(--muted);
+      font-size:clamp(12px, 0.9vw, 14px);
+      margin-top:2px;
+    }
+
+    .grid{
+      height:100%;
+      display:grid;
+      grid-template-columns: 1.05fr 0.95fr;
+      gap:12px;
+    }
+
+    .card{
+      background:var(--card);
+      border:1px solid rgba(255,255,255,0.06);
+      border-radius:16px;
+      padding:14px;
+      overflow:hidden;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+    }
+
+    .card h2{
+      margin:0 0 10px 0;
+      font-size:clamp(14px, 1vw, 16px);
+      color:var(--muted);
+      font-weight:700;
+      letter-spacing:0.3px;
+    }
+
+    .row{
+      display:grid;
+      grid-template-rows:auto 1fr;
+      gap:10px;
+      height:100%;
+    }
+
+    iframe{
+      width:100%;
+      height:100%;
+      border:0;
+      border-radius:12px;
+      background:#000;
+    }
+
+    .small{ color:var(--muted); font-size:12px; }
+    .accent{ color:var(--accent); font-weight:800; }
+
+    .mono{
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
       white-space:pre-wrap;
       word-break:break-word;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-      font-size:14px;
-      line-height:1.25;
     }
 
     /* Category classes */
-    .cat-vfr  { color: var(--vfr); }
-    .cat-mvfr { color: var(--mvfr); }
-    .cat-ifr  { color: var(--ifr); }
-    .cat-lifr { color: var(--lifr); }
-    .cat-unk  { color: var(--unk); }
+    .cat-vfr{ color:var(--vfr); }
+    .cat-mvfr{ color:var(--mvfr); }
+    .cat-ifr{ color:var(--ifr); }
+    .cat-lifr{ color:var(--lifr); }
+    .cat-unk{ color:var(--unk); }
+    .error{ color:#ff6b6b; font-weight:800; }
 
-    .error { color:#ff6b6b; font-weight:700; }
-
-    /* ===== METAR "app-like" layout ===== */
-    .metarTop {
+    /* METAR “app” look */
+    .metarTop{
       display:flex;
       align-items:center;
       justify-content:space-between;
-      padding:8px 10px;
+      padding:10px 12px;
       border-radius:14px;
-      background: rgba(255,255,255,0.03);
+      background:rgba(255,255,255,0.03);
       border:1px solid rgba(255,255,255,0.06);
       margin-bottom:10px;
     }
 
-    .catBadge {
-      display:flex; align-items:center; gap:10px;
-      font-weight:800; font-size:22px;
-      letter-spacing:0.5px;
+    .catBadge{
+      display:flex;
+      align-items:center;
+      gap:10px;
+      font-weight:900;
+      font-size:clamp(18px, 1.6vw, 26px);
+      letter-spacing:0.4px;
     }
 
-    .dot {
-      width:22px; height:22px; border-radius:999px;
+    .dot{
+      width:22px;
+      height:22px;
+      border-radius:999px;
       box-shadow: 0 0 0 3px rgba(255,255,255,0.06) inset;
     }
 
-    .ageBadge {
-      font-weight:800;
-      font-size:22px;
-      color: var(--age);
+    .ageBadge{
+      font-weight:900;
+      font-size:clamp(16px, 1.4vw, 24px);
+      color:var(--age);
+      letter-spacing:0.2px;
+      white-space:nowrap;
     }
 
-    .metarRaw {
-      font-size:22px;
-      font-weight:800;
-      padding:10px 10px;
+    .metarRaw{
+      font-size:clamp(16px, 1.4vw, 22px);
+      font-weight:900;
+      padding:12px 12px;
       border-radius:14px;
-      background: rgba(255,255,255,0.02);
+      background:rgba(255,255,255,0.02);
       border:1px solid rgba(255,255,255,0.06);
       margin-bottom:12px;
+      line-height:1.25;
     }
 
-    .kvTable {
+    .kvTable{
       border-radius:16px;
-      background: rgba(255,255,255,0.02);
+      background:rgba(255,255,255,0.02);
       border:1px solid rgba(255,255,255,0.06);
       overflow:hidden;
     }
 
-    .kvRow {
+    .kvRow{
       display:grid;
       grid-template-columns: 1fr 1fr;
       gap:10px;
-      padding:14px 16px;
-      border-top: 1px solid var(--divider);
+      padding:12px 14px;
+      border-top:1px solid var(--divider);
       align-items:center;
     }
-    .kvRow:first-child { border-top: none; }
+    .kvRow:first-child{ border-top:none; }
 
-    .kvLabel {
-      color: rgba(255,255,255,0.92);
-      font-size:22px;
-      font-weight:700;
-      text-align:center;
-    }
-
-    .kvValue {
-      color: var(--mvfr); /* screenshot vibes; we override per-row if desired */
-      font-size:26px;
+    .kvLabel{
+      color:rgba(255,255,255,0.92);
+      font-size:clamp(16px, 1.35vw, 22px);
       font-weight:800;
       text-align:center;
     }
 
-    /* For non-blue values, we’ll apply classes */
-    .kvValue.neutral { color: rgba(255,255,255,0.9); }
-    .kvValue.blue { color: var(--mvfr); }
-    .kvValue.green { color: var(--vfr); }
-    .kvValue.red { color: var(--ifr); }
-    .kvValue.purple { color: var(--lifr); }
+    .kvValue{
+      color:var(--mvfr);
+      font-size:clamp(18px, 1.55vw, 26px);
+      font-weight:900;
+      text-align:center;
+      letter-spacing:0.2px;
+    }
 
-    /* TAF block: raw with line breaks, line-by-line color */
-    .tafBlock { overflow:auto; padding-right:4px; }
-    .tafLine { display:block; }
+    /* TAF block */
+    .tafBlock{
+      overflow:auto;
+      padding-right:4px;
+      font-size:clamp(13px, 1.05vw, 16px);
+      line-height:1.35;
+    }
+    .tafLine{ display:block; }
+
   </style>
 </head>
 
@@ -167,39 +235,39 @@
           <div class="kvTable">
             <div class="kvRow">
               <div class="kvLabel">Time</div>
-              <div class="kvValue blue" id="m_time">—</div>
+              <div class="kvValue" id="m_time">—</div>
             </div>
             <div class="kvRow">
               <div class="kvLabel">Wind</div>
-              <div class="kvValue blue" id="m_wind">—</div>
+              <div class="kvValue" id="m_wind">—</div>
             </div>
             <div class="kvRow">
               <div class="kvLabel">Visibility</div>
-              <div class="kvValue blue" id="m_vis">—</div>
+              <div class="kvValue" id="m_vis">—</div>
             </div>
             <div class="kvRow">
               <div class="kvLabel">Clouds (AGL)</div>
-              <div class="kvValue blue" id="m_clouds">—</div>
+              <div class="kvValue" id="m_clouds">—</div>
             </div>
             <div class="kvRow">
               <div class="kvLabel">Temperature</div>
-              <div class="kvValue blue" id="m_temp">—</div>
+              <div class="kvValue" id="m_temp">—</div>
             </div>
             <div class="kvRow">
               <div class="kvLabel">Dewpoint</div>
-              <div class="kvValue blue" id="m_dew">—</div>
+              <div class="kvValue" id="m_dew">—</div>
             </div>
             <div class="kvRow">
               <div class="kvLabel">Altimeter</div>
-              <div class="kvValue blue" id="m_alt">—</div>
+              <div class="kvValue" id="m_alt">—</div>
             </div>
             <div class="kvRow">
               <div class="kvLabel">Humidity</div>
-              <div class="kvValue blue" id="m_rh">—</div>
+              <div class="kvValue" id="m_rh">—</div>
             </div>
             <div class="kvRow">
               <div class="kvLabel">Density Altitude</div>
-              <div class="kvValue blue" id="m_da">—</div>
+              <div class="kvValue" id="m_da">—</div>
             </div>
           </div>
 
@@ -234,7 +302,7 @@
     const STATION = "KFOE";
     const PROXY_BASE = "https://kfoe-awc-proxy.oliversheley.workers.dev";
 
-    // KFOE elevation: use the TAF payload value (315 m) -> ~1033 ft
+    // KFOE field elevation for DA calculation (approx). Change if desired.
     const FIELD_ELEV_FT = 1033;
 
     const LAT = 38.95083;
@@ -255,19 +323,22 @@
       "&type=map&location=coordinates&detail=true" +
       "&metricWind=default&metricTemp=default&radarRange=-1";
 
+    // ====== STATE ======
+    let lastObsMs = null;
+
     // ====== HELPERS ======
     const $ = (id) => document.getElementById(id);
 
-    function setClock() {
+    function setClock(){
       $("clock").textContent = new Date().toLocaleString();
     }
 
-    function safe(v, fallback="—") {
+    function safe(v, fallback="—"){
       return (v === undefined || v === null || v === "") ? fallback : v;
     }
 
-    function catClass(cat) {
-      switch (String(cat || "").toUpperCase()) {
+    function catClass(cat){
+      switch (String(cat || "").toUpperCase()){
         case "VFR":  return "cat-vfr";
         case "MVFR": return "cat-mvfr";
         case "IFR":  return "cat-ifr";
@@ -276,8 +347,8 @@
       }
     }
 
-    function catColorVar(cat) {
-      switch (String(cat || "").toUpperCase()) {
+    function catColorVar(cat){
+      switch (String(cat || "").toUpperCase()){
         case "VFR":  return "var(--vfr)";
         case "MVFR": return "var(--mvfr)";
         case "IFR":  return "var(--ifr)";
@@ -286,81 +357,113 @@
       }
     }
 
-    function computeAgeMinutes(isoTime) {
-      if (!isoTime) return null;
-      const t = new Date(isoTime).getTime();
-      if (!Number.isFinite(t)) return null;
-      const mins = Math.round((Date.now() - t) / 60000);
-      return (mins >= 0) ? mins : null;
+    // Robust time parsing (ISO string OR unix seconds OR unix ms)
+    function parseTimeToMs(t){
+      if (t == null) return null;
+
+      if (typeof t === "number" && Number.isFinite(t)){
+        if (t > 1e12) return t;           // ms
+        if (t > 1e9)  return t * 1000;    // seconds
+        return null;
+      }
+
+      if (typeof t === "string"){
+        const s = t.trim();
+
+        // numeric string?
+        if (/^\d{9,16}$/.test(s)){
+          const n = Number(s);
+          if (!Number.isFinite(n)) return null;
+          if (n > 1e12) return n;
+          if (n > 1e9)  return n * 1000;
+        }
+
+        // ISO
+        const ms = Date.parse(s);
+        return Number.isFinite(ms) ? ms : null;
+      }
+
+      return null;
     }
 
-    function formatLocalTimeWithTZ(isoTime) {
-      if (!isoTime) return "—";
-      const d = new Date(isoTime);
-      if (isNaN(d.getTime())) return "—";
-      // Example: "11:53 MST"
-      return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", timeZoneName: "short" });
+    function computeAgeMinutesFromMs(ms){
+      if (!Number.isFinite(ms)) return null;
+      const diff = Date.now() - ms;
+      if (!Number.isFinite(diff)) return null;
+      if (diff < 0) return null;                 // future?
+      const mins = Math.round(diff / 60000);
+      // If something is wildly old, treat as invalid instead of showing absurd numbers
+      if (mins > 24 * 60 * 7) return null;       // > 7 days
+      return mins;
     }
 
-    function ceilingFeetFromClouds(clouds) {
+    function formatLocalTimeWithTZFromMs(ms){
+      if (!Number.isFinite(ms)) return "—";
+      const d = new Date(ms);
+      return d.toLocaleTimeString([], { hour:"2-digit", minute:"2-digit", timeZoneName:"short" });
+    }
+
+    function formatObsLineFromMs(ms){
+      if (!Number.isFinite(ms)) return "—";
+      const d = new Date(ms);
+      return d.toLocaleString([], { month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit", timeZoneName:"short" });
+    }
+
+    function ceilingFeetFromClouds(clouds){
       if (!Array.isArray(clouds) || !clouds.length) return null;
       const candidates = clouds
-        .filter(c => ["BKN","OVC","VV"].includes(String(c.cover || "").toUpperCase()) && Number.isFinite(c.base))
-        .sort((a,b) => a.base - b.base);
+        .filter(c => ["BKN","OVC","VV"].includes(String(c.cover||"").toUpperCase()) && Number.isFinite(c.base))
+        .sort((a,b)=>a.base-b.base);
       return candidates.length ? candidates[0].base : null;
     }
 
-    function cloudPhrase(clouds) {
+    function cloudPhrase(clouds){
       if (!Array.isArray(clouds) || !clouds.length) return "Clear";
-      // Prefer lowest OVC/BKN/VV if present; else lowest layer
-      const sorted = clouds
-        .filter(c => Number.isFinite(c.base))
-        .sort((a,b) => a.base - b.base);
+      const sorted = clouds.filter(c=>Number.isFinite(c.base)).sort((a,b)=>a.base-b.base);
       if (!sorted.length) return "—";
       const pick = sorted.find(c => ["OVC","BKN","VV"].includes(String(c.cover||"").toUpperCase())) || sorted[0];
-      const cover = String(pick.cover || "").toUpperCase();
+      const cover = String(pick.cover||"").toUpperCase();
       const base = pick.base;
 
       const coverWord = ({
-        "OVC": "Overcast",
-        "BKN": "Broken",
-        "SCT": "Scattered",
-        "FEW": "Few",
-        "VV":  "Vertical Vis"
+        "OVC":"Overcast","BKN":"Broken","SCT":"Scattered","FEW":"Few","VV":"Vertical Vis"
       })[cover] || cover;
 
       return `${coverWord} ${base.toLocaleString()}′`;
     }
 
-    function parseAltimeterInHg(mAlt) {
-      // API might return 30.70 or 3070. We normalize to inHg number.
-      if (mAlt == null) return null;
-      const n = Number(mAlt);
-      if (!Number.isFinite(n)) return null;
-      if (n > 200) return n / 100;   // 3070 -> 30.70
-      return n;                      // 30.70
-    }
-
-    function cToF(c) {
+    function cToF(c){
       if (!Number.isFinite(c)) return null;
       return (c * 9/5) + 32;
     }
 
-    function relHumidityPct(tempC, dewC) {
-      // Magnus approximation
+    function relHumidityPct(tempC, dewC){
       if (!Number.isFinite(tempC) || !Number.isFinite(dewC)) return null;
-      const a = 17.625, b = 243.04;
-      const sat = Math.exp((a * tempC) / (b + tempC));
-      const act = Math.exp((a * dewC) / (b + dewC));
-      const rh = (act / sat) * 100;
+      const a=17.625, b=243.04;
+      const sat=Math.exp((a*tempC)/(b+tempC));
+      const act=Math.exp((a*dewC)/(b+dewC));
+      const rh=(act/sat)*100;
       return Math.max(0, Math.min(100, rh));
     }
 
-    function densityAltitudeFt(fieldElevFt, altimInHg, tempC) {
-      // Approx:
-      // pressure altitude = field elev + (29.92 - altim) * 1000
-      // ISA temp at PA: 15 - 2°C/1000ft * (PA/1000)
-      // DA ≈ PA + 120*(OAT - ISA)
+    // Interpret altimeter that might arrive as:
+    // - inHg (20–35)
+    // - hundredths inHg (2000–3500) e.g., 3066
+    // - hPa (800–1100) e.g., 1038
+    function parseAltimeterInHg(alt){
+      if (alt == null) return null;
+      const n = Number(alt);
+      if (!Number.isFinite(n)) return null;
+
+      if (n >= 20 && n <= 35) return n;                  // already inHg
+      if (n >= 2000 && n <= 3500) return n / 100;        // hundredths inHg -> inHg
+      if (n >= 800 && n <= 1100) return n * 0.029529983; // hPa -> inHg
+
+      // sometimes string like "A3066" in raw only; if so, this won't be hit
+      return null;
+    }
+
+    function densityAltitudeFt(fieldElevFt, altimInHg, tempC){
       if (!Number.isFinite(fieldElevFt) || !Number.isFinite(altimInHg) || !Number.isFinite(tempC)) return null;
       const pa = fieldElevFt + (29.92 - altimInHg) * 1000;
       const isa = 15 - 2 * (pa / 1000);
@@ -368,21 +471,20 @@
       return da;
     }
 
-    function fmtSignedFeet(ft) {
+    function fmtFeet(ft){
       if (!Number.isFinite(ft)) return "—";
-      const r = Math.round(ft);
-      return `${r.toLocaleString()}′`;
+      return `${Math.round(ft).toLocaleString()}′`;
     }
 
-    async function fetchJSON(path) {
+    async function fetchJSON(path){
       const url = `${PROXY_BASE}${path}`;
-      const res = await fetch(url, { cache: "no-store" });
+      const res = await fetch(url, { cache:"no-store" });
       if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
       return res.json();
     }
 
-    // Insert simple line breaks before major TAF change tokens, but keep it raw
-    function tafRawToLines(rawTAF) {
+    // TAF line breaks (raw style)
+    function tafRawToLines(rawTAF){
       const s = String(rawTAF || "").trim();
       if (!s) return [];
       const normalized = s
@@ -391,29 +493,29 @@
         .replace(/\s+(TEMPO)/g, "\n$1")
         .replace(/\s+(BECMG)/g, "\n$1")
         .replace(/\s+(PROB\d{2})/g, "\n$1");
-      return normalized.split("\n").map(x => x.trim()).filter(Boolean);
+      return normalized.split("\n").map(x=>x.trim()).filter(Boolean);
     }
 
-    function visToNumber(vis) {
+    function visToNumber(vis){
       if (vis == null) return null;
       if (typeof vis === "number") return Number.isFinite(vis) ? vis : null;
-      if (typeof vis === "string") {
-        const s = vis.trim().replace("+", "");
+      if (typeof vis === "string"){
+        const s = vis.trim().replace("+","");
         const n = Number(s);
         return Number.isFinite(n) ? n : null;
       }
       return null;
     }
 
-    function flightCategoryFrom(visSM, ceilFT) {
-      function visCat(v) {
+    function flightCategoryFrom(visSM, ceilFT){
+      function visCat(v){
         if (v == null) return null;
         if (v < 1) return "LIFR";
         if (v < 3) return "IFR";
         if (v <= 5) return "MVFR";
         return "VFR";
       }
-      function ceilCat(c) {
+      function ceilCat(c){
         if (c == null) return null;
         if (c < 500) return "LIFR";
         if (c < 1000) return "IFR";
@@ -422,24 +524,31 @@
       }
       const a = visCat(visSM);
       const b = ceilCat(ceilFT);
-      if (a && b) {
-        const rank = {LIFR:0, IFR:1, MVFR:2, VFR:3};
+      if (a && b){
+        const rank={LIFR:0, IFR:1, MVFR:2, VFR:3};
         return (rank[a] < rank[b]) ? a : b;
       }
       return a || b || "UNK";
     }
 
-    function fmtUnixLocal(unixSec) {
+    function fmtUnixLocal(unixSec){
       if (!unixSec || !Number.isFinite(unixSec)) return "—";
       const d = new Date(unixSec * 1000);
       return d.toLocaleString([], { month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit" });
     }
 
+    // ====== AGE UPDATER (without refetch) ======
+    function refreshAgeOnly(){
+      const mins = computeAgeMinutesFromMs(lastObsMs);
+      $("ageBadge").textContent = (mins == null) ? "—" : `${mins}m ago`;
+    }
+
     // ====== LOADERS ======
-    async function loadMetar() {
+    async function loadMetar(){
       const metarraw = $("metarraw");
       metarraw.className = "metarRaw mono cat-unk";
-      try {
+
+      try{
         const arr = await fetchJSON(`/metar?ids=${encodeURIComponent(STATION)}`);
         const m = (Array.isArray(arr) && arr.length) ? arr[0] : null;
         if (!m) throw new Error("No METAR returned");
@@ -447,29 +556,38 @@
         const raw = safe(m.rawOb || m.raw || m.text, JSON.stringify(m, null, 2));
         metarraw.textContent = raw;
 
-        const cat = (m.fltCat || "UNK").toUpperCase();
+        const cat = String(m.fltCat || "UNK").toUpperCase();
         $("catText").textContent = cat;
         $("catText").className = catClass(cat);
         $("catDot").style.background = catColorVar(cat);
 
-        // Age badge
-        const obs = m.obsTime || m.reportTime || m.time;
-        $("obstime").textContent = safe(obs);
-        const ageMin = computeAgeMinutes(obs);
-        $("ageBadge").textContent = (ageMin == null) ? "—" : `${ageMin}m ago`;
-
-        // Raw METAR colored by category
         metarraw.classList.add(catClass(cat));
 
-        // Fill the “explanation” table
-        $("m_time").textContent = formatLocalTimeWithTZ(obs);
+        // time parsing
+        const obs = m.obsTime || m.reportTime || m.time;
+        lastObsMs = parseTimeToMs(obs);
+
+        $("obstime").textContent = formatObsLineFromMs(lastObsMs);
+        refreshAgeOnly();
+
+        // Explanation table values
+        $("m_time").textContent = formatLocalTimeWithTZFromMs(lastObsMs);
 
         const windTxt = (m.wdir != null && m.wspd != null)
           ? `${String(m.wdir).padStart(3,"0")}° at ${m.wspd}${m.wgst ? " - " + m.wgst : ""} kts`
           : "—";
         $("m_wind").textContent = windTxt;
 
-        $("m_vis").textContent = (m.visib != null) ? `${m.visib} sm` : "—";
+        // Visibility display: preserve "+" if present
+        let visTxt = "—";
+        if (m.visib != null){
+          if (typeof m.visib === "string") visTxt = m.visib.includes("+") ? `${m.visib.replace("6+","10+")} sm` : `${m.visib} sm`;
+          else visTxt = `${m.visib} sm`;
+          // If API uses 6+ to mean P6SM, show it as 10+ like apps usually do
+          if (/^6\+/.test(String(m.visib))) visTxt = "10+ sm";
+        }
+        $("m_vis").textContent = visTxt;
+
         $("m_clouds").textContent = cloudPhrase(m.clouds);
 
         const tC = Number.isFinite(m.temp) ? m.temp : null;
@@ -477,8 +595,8 @@
         const tF = (tC == null) ? null : cToF(tC);
         const dF = (dC == null) ? null : cToF(dC);
 
-        $("m_temp").textContent = (tC == null || tF == null) ? "—" : `${tC}°C (${Math.round(tF)}°F)`;
-        $("m_dew").textContent  = (dC == null || dF == null) ? "—" : `${dC}°C (${Math.round(dF)}°F)`;
+        $("m_temp").textContent = (tC == null || tF == null) ? "—" : `${tC.toFixed(1)}°C (${Math.round(tF)}°F)`;
+        $("m_dew").textContent  = (dC == null || dF == null) ? "—" : `${dC.toFixed(1)}°C (${Math.round(dF)}°F)`;
 
         const altInHg = parseAltimeterInHg(m.altim);
         $("m_alt").textContent = (altInHg == null) ? "—" : `${altInHg.toFixed(2)} inHg`;
@@ -487,9 +605,9 @@
         $("m_rh").textContent = (rh == null) ? "—" : `${Math.round(rh)}%`;
 
         const da = densityAltitudeFt(FIELD_ELEV_FT, altInHg, tC);
-        $("m_da").textContent = fmtSignedFeet(da);
+        $("m_da").textContent = fmtFeet(da);
 
-      } catch (e) {
+      } catch(e){
         $("catText").textContent = "—";
         $("catText").className = "cat-unk";
         $("catDot").style.background = "var(--unk)";
@@ -497,17 +615,20 @@
 
         metarraw.textContent = `ERROR loading METAR: ${e.message}`;
         metarraw.className = "metarRaw mono error";
+
+        lastObsMs = null;
+        $("obstime").textContent = "—";
       }
     }
 
-    async function loadTaf() {
+    async function loadTaf(){
       const tafmeta = $("tafmeta");
       const tafBlock = $("tafBlock");
       tafBlock.className = "tafBlock mono cat-unk";
       tafBlock.textContent = "";
       tafBlock.innerHTML = "";
 
-      try {
+      try{
         const arr = await fetchJSON(`/taf?ids=${encodeURIComponent(STATION)}`);
         const t = (Array.isArray(arr) && arr.length) ? arr[0] : null;
         if (!t) throw new Error("No TAF returned");
@@ -519,7 +640,7 @@
         const lines = tafRawToLines(raw);
         const fcsts = Array.isArray(t.fcsts) ? t.fcsts : [];
 
-        if (!lines.length) {
+        if (!lines.length){
           tafBlock.textContent = "No TAF text returned.";
           return;
         }
@@ -538,18 +659,17 @@
           tafBlock.appendChild(document.createTextNode("\n"));
         });
 
-      } catch (e) {
+      } catch(e){
         tafmeta.textContent = "";
         tafBlock.textContent = `ERROR loading TAF: ${e.message}`;
         tafBlock.className = "tafBlock mono error";
       }
     }
 
-    function init() {
-      // Make script errors visible
+    function init(){
       window.addEventListener("error", (ev) => {
         const metarraw = $("metarraw");
-        if (metarraw && metarraw.textContent.startsWith("Loading")) {
+        if (metarraw && String(metarraw.textContent||"").startsWith("Loading")){
           metarraw.textContent = `SCRIPT ERROR: ${ev.message}`;
           metarraw.className = "metarRaw mono error";
         }
@@ -561,7 +681,13 @@
       loadMetar();
       loadTaf();
 
+      // UI clock
       setInterval(setClock, 10_000);
+
+      // Update "Xm ago" smoothly without refetch
+      setInterval(refreshAgeOnly, 30_000);
+
+      // Data refresh cadence
       setInterval(loadMetar, 60_000);
       setInterval(loadTaf,  5 * 60_000);
     }
