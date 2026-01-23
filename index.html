@@ -59,7 +59,6 @@
       margin-top:2px;
     }
 
-    /* Equal-share grid (no scrolling) */
     .grid{
       height:100%;
       min-height:0;
@@ -104,7 +103,6 @@
     .accent{ color:var(--accent); font-weight:800; }
     .mono{ font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
 
-    /* Category classes */
     .cat-vfr{ color:var(--vfr); }
     .cat-mvfr{ color:var(--mvfr); }
     .cat-ifr{ color:var(--ifr); }
@@ -112,7 +110,6 @@
     .cat-unk{ color:var(--unk); }
     .error{ color:#ff6b6b; font-weight:800; }
 
-    /* METAR top bar */
     .metarTop{
       display:flex;
       align-items:center;
@@ -146,7 +143,6 @@
       white-space:nowrap;
     }
 
-    /* METAR raw line (slightly smaller + less padding so the table fits) */
     .metarRaw{
       font-size:clamp(13px, 1.15vw, 18px);
       font-weight:900;
@@ -161,7 +157,6 @@
       flex:0 0 auto;
     }
 
-    /* METAR table: tuned to prevent cropping */
     .kvTable{
       border-radius:16px;
       background:rgba(255,255,255,0.02);
@@ -177,10 +172,10 @@
       display:grid;
       grid-template-columns: 1fr 1fr;
       gap:10px;
-      padding:clamp(6px, 0.75vh, 10px) 14px; /* tighter than before */
+      padding:clamp(6px, 0.75vh, 10px) 14px;
       border-top:1px solid var(--divider);
       align-items:center;
-      flex: 1 0 auto; /* allow rows to share available space */
+      flex: 1 0 auto;
       min-height:0;
     }
     .kvRow:first-child{ border-top:none; }
@@ -209,7 +204,6 @@
       color:var(--muted);
     }
 
-    /* TAF (no scrolling; fade out) */
     .tafHeader{ flex:0 0 auto; }
     .tafBlock{
       flex:1 1 auto;
@@ -219,7 +213,6 @@
       font-size:clamp(12px, 1.05vw, 15px);
       line-height:1.35;
       overflow:hidden;
-
       -webkit-mask-image: linear-gradient(to bottom, #000 85%, transparent);
       mask-image: linear-gradient(to bottom, #000 85%, transparent);
     }
@@ -281,10 +274,6 @@
             <div class="kvLabel">Altimeter</div>
             <div class="kvValue" id="m_alt">—</div>
           </div>
-          <div class="kvRow">
-            <div class="kvLabel">Humidity</div>
-            <div class="kvValue" id="m_rh">—</div>
-          </div>
         </div>
 
         <div class="obsLine">Obs time: <span class="accent" id="obstime">—</span></div>
@@ -311,7 +300,6 @@
   <script>
     "use strict";
 
-    // ====== CONFIG ======
     const STATION = "KFOE";
     const PROXY_BASE = "https://kfoe-awc-proxy.oliversheley.workers.dev";
 
@@ -333,10 +321,8 @@
       "&type=map&location=coordinates&detail=true"
       + "&metricWind=default&metricTemp=default&radarRange=-1";
 
-    // ====== STATE ======
     let lastObsMs = null;
 
-    // ====== HELPERS ======
     const $ = (id) => document.getElementById(id);
 
     function setClock(){ $("clock").textContent = new Date().toLocaleString(); }
@@ -419,15 +405,6 @@
 
     function cToF(c){ return Number.isFinite(c) ? (c * 9/5) + 32 : null; }
 
-    function relHumidityPct(tempC, dewC){
-      if (!Number.isFinite(tempC) || !Number.isFinite(dewC)) return null;
-      const a=17.625, b=243.04;
-      const sat=Math.exp((a*tempC)/(b+tempC));
-      const act=Math.exp((a*dewC)/(b+dewC));
-      const rh=(act/sat)*100;
-      return Math.max(0, Math.min(100, rh));
-    }
-
     function parseAltimeterInHg(alt){
       if (alt == null) return null;
       const n = Number(alt);
@@ -506,7 +483,6 @@
       return d.toLocaleString([], { month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit" });
     }
 
-    // ====== LOADERS ======
     async function loadMetar(){
       const metarraw = $("metarraw");
       metarraw.className = "metarRaw mono cat-unk";
@@ -558,9 +534,6 @@
 
         const altInHg = parseAltimeterInHg(m.altim);
         $("m_alt").textContent = (altInHg == null) ? "—" : `${altInHg.toFixed(2)} inHg`;
-
-        const rh = relHumidityPct(tC, dC);
-        $("m_rh").textContent = (rh == null) ? "—" : `${Math.round(rh)}%`;
 
       } catch(e){
         $("catText").textContent = "—";
