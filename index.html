@@ -5,28 +5,70 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>KFOE Field Conditions & Weather</title>
   <style>
-    :root { --bg:#0b0f14; --card:#111823; --text:#e8eef6; --muted:#9fb0c3; --accent:#57a6ff; }
+    :root {
+      --bg:#0b0f14; --card:#111823; --text:#e8eef6; --muted:#9fb0c3; --accent:#57a6ff;
+
+      /* Category colors (pilot-standard-ish) */
+      --vfr:#2bdc4f;     /* green */
+      --mvfr:#4aa3ff;    /* blue */
+      --ifr:#ff4d4d;     /* red */
+      --lifr:#c84dff;    /* magenta/purple */
+      --unknown:#d7e3f3; /* default text */
+    }
+
     * { box-sizing: border-box; }
     body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background:var(--bg); color:var(--text); }
     .wrap { height:100vh; display:grid; grid-template-rows:auto 1fr; gap:12px; padding:16px; }
     header { display:flex; align-items:baseline; justify-content:space-between; gap:16px; }
     .title { font-size:28px; font-weight:700; letter-spacing:0.5px; }
     .subtitle { color:var(--muted); font-size:14px; }
+
     .grid { height:100%; display:grid; grid-template-columns: 1.05fr 0.95fr; gap:12px; }
     .card { background:var(--card); border:1px solid rgba(255,255,255,0.06); border-radius:16px; padding:14px; overflow:hidden; }
     .card h2 { margin:0 0 10px 0; font-size:16px; color:var(--muted); font-weight:600; letter-spacing:0.4px; }
+
     .kv { display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:10px; }
     .pill { padding:10px 12px; border-radius:12px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.06); }
     .pill .k { font-size:12px; color:var(--muted); margin-bottom:4px; }
     .pill .v { font-size:18px; font-weight:700; }
-    pre { margin:0; white-space:pre-wrap; word-break:break-word; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; font-size:14px; line-height:1.25; color:#d7e3f3; }
+
     .row { display:grid; grid-template-rows:auto 1fr; gap:10px; height:100%; }
     iframe { width:100%; height:100%; border:0; border-radius:12px; background:#000; }
+
     .small { color:var(--muted); font-size:12px; }
     .accent { color: var(--accent); font-weight:700; }
     .error { color:#ff6b6b; font-weight:700; }
+
+    /* Monospace blocks */
+    .mono {
+      margin:0;
+      white-space:pre-wrap;
+      word-break:break-word;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size:14px;
+      line-height:1.25;
+    }
+
+    /* Category classes */
+    .cat-vfr { color: var(--vfr); }
+    .cat-mvfr { color: var(--mvfr); }
+    .cat-ifr { color: var(--ifr); }
+    .cat-lifr { color: var(--lifr); }
+    .cat-unknown { color: var(--unknown); }
+
+    /* TAF lines */
+    .tafLines { display:flex; flex-direction:column; gap:6px; overflow:auto; padding-right:4px; }
+    .tafLine {
+      padding:8px 10px;
+      border-radius:12px;
+      background:rgba(255,255,255,0.03);
+      border:1px solid rgba(255,255,255,0.06);
+    }
+    .tafLine .meta { font-size:11px; color:var(--muted); margin-bottom:4px; }
+    .tafLine .txt { font-weight:700; }
   </style>
 </head>
+
 <body>
   <div class="wrap">
     <header>
@@ -52,17 +94,21 @@
           </div>
           <div class="small">Obs time: <span class="accent" id="obstime">—</span> • Age: <span class="accent" id="age">—</span></div>
         </div>
-        <pre id="metarraw">Loading…</pre>
+
+        <!-- Raw METAR (colored by category) -->
+        <div id="metarraw" class="mono cat-unknown">Loading…</div>
       </div>
 
       <!-- TAF -->
       <div class="card row">
         <div>
-          <h2>TAF (Raw + Quick Summary)</h2>
+          <h2>TAF (Line-by-line Category)</h2>
           <div class="small" id="tafmeta">Loading…</div>
-          <div class="small" id="tafsummary"></div>
+          <div class="small" id="tafrawheader"></div>
         </div>
-        <pre id="tafraw">Loading…</pre>
+
+        <!-- TAF lines (each line colored by computed category) -->
+        <div id="tafLines" class="tafLines"></div>
       </div>
 
       <!-- Radar -->
@@ -76,15 +122,12 @@
   <script>
     // ====== CONFIG ======
     const STATION = "KFOE";
-
-    // Your Worker base URL (confirmed working for you)
     const PROXY_BASE = "https://kfoe-awc-proxy.oliversheley.workers.dev";
 
-    // KFOE approx coordinates for centering Windy
+    // KFOE approx coords (map center)
     const LAT = 38.95083;
     const LON = -95.66361;
 
-    // Windy embed configuration
     const WINDY_URL =
       "https://embed.windy.com/embed2.html" +
       `?lat=${encodeURIComponent(LAT)}` +
@@ -104,8 +147,7 @@
     const $ = (id) => document.getElementById(id);
 
     function setClock() {
-      const now = new Date();
-      $("clock").textContent = now.toLocaleString();
+      $("clock").textContent = new Date().toLocaleString();
     }
 
     function safe(v, fallback="—") {
@@ -113,13 +155,19 @@
     }
 
     function parseCeilingFromClouds(clouds) {
-      // clouds often looks like [{cover:"BKN", base:1200}, ...]
-      if (!Array.isArray(clouds) || !clouds.length) return "—";
+      if (!Array.isArray(clouds) || !clouds.length) return null;
       const candidates = clouds
         .filter(c => ["BKN","OVC","VV"].includes((c.cover || "").toUpperCase()) && Number.isFinite(c.base))
         .sort((a,b) => a.base - b.base);
-      if (!candidates.length) return "—";
-      return `${candidates[0].cover} ${candidates[0].base} ft`;
+      return candidates.length ? candidates[0].base : null; // feet
+    }
+
+    function formatCeilingLabel(clouds) {
+      const base = parseCeilingFromClouds(clouds);
+      if (base == null) return "—";
+      const top = (clouds || []).find(c => ["BKN","OVC","VV"].includes((c.cover || "").toUpperCase()) && c.base === base);
+      const cover = top?.cover || "CIG";
+      return `${cover} ${base} ft`;
     }
 
     function computeAgeMinutes(isoTime) {
@@ -136,111 +184,12 @@
       return d.toLocaleString([], { month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit" });
     }
 
-    async function fetchJSON(path) {
-      const url = `${PROXY_BASE}${path}`;
-      const res = await fetch(url, { cache: "no-store" });
-      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-      return res.json();
-    }
-
-    // ====== LOADERS ======
-    async function loadMetar() {
-      const metarraw = $("metarraw");
-      metarraw.classList.remove("error");
-      try {
-        const arr = await fetchJSON(`/metar?ids=${encodeURIComponent(STATION)}`);
-        const m = (Array.isArray(arr) && arr.length) ? arr[0] : null;
-        if (!m) throw new Error("No METAR returned");
-
-        // Raw text field name varies; try common ones first.
-        metarraw.textContent = safe(m.rawOb || m.raw || m.text, JSON.stringify(m, null, 2));
-
-        $("fltcat").textContent = safe(m.fltCat);
-        $("wind").textContent = safe(
-          (m.wdir !== undefined && m.wspd !== undefined)
-            ? `${m.wdir}° @ ${m.wspd} kt${m.wgst ? " G" + m.wgst : ""}`
-            : "—"
-        );
-
-        $("vis").textContent = safe(m.visib !== undefined ? `${m.visib} sm` : "—");
-        $("cig").textContent = parseCeilingFromClouds(m.clouds);
-        $("tempdew").textContent = (m.temp !== undefined && m.dewp !== undefined)
-          ? `${m.temp}°C / ${m.dewp}°C`
-          : "—";
-        $("altim").textContent = safe(m.altim !== undefined ? `A${m.altim}` : "—");
-
-        const obs = m.obsTime || m.reportTime || m.time;
-        $("obstime").textContent = safe(obs);
-        $("age").textContent = computeAgeMinutes(obs);
-
-      } catch (e) {
-        metarraw.textContent = `ERROR loading METAR: ${e.message}`;
-        metarraw.classList.add("error");
+    function visToNumber(vis) {
+      // Handles: 6+, "6+", 2, "2", null
+      if (vis == null) return null;
+      if (typeof vis === "string") {
+        const s = vis.trim().replace("+", "");
+        const n = Number(s);
+        return Number.isFinite(n) ? n : null;
       }
-    }
-
-    async function loadTaf() {
-      const tafraw = $("tafraw");
-      const tafmeta = $("tafmeta");
-      const tafsummary = $("tafsummary");
-      tafraw.classList.remove("error");
-
-      try {
-        const arr = await fetchJSON(`/taf?ids=${encodeURIComponent(STATION)}`);
-        const t = (Array.isArray(arr) && arr.length) ? arr[0] : null;
-        if (!t) throw new Error("No TAF returned");
-
-        // --- THIS IS THE FIX ---
-        // Your TAF JSON uses "rawTAF" (not rawOb/raw/text).
-        tafraw.textContent = safe(t.rawTAF || t.rawOb || t.raw || t.text, JSON.stringify(t, null, 2));
-
-        // Metadata line
-        tafmeta.textContent =
-          `Issued: ${safe(t.issueTime)} • Bulletin: ${safe(t.bulletinTime)} • Valid: ${fmtUnixLocal(t.validTimeFrom)}–${fmtUnixLocal(t.validTimeTo)}`;
-
-        // Quick summary of the first few forecast groups
-        if (Array.isArray(t.fcsts) && t.fcsts.length) {
-          const parts = t.fcsts.slice(0, 6).map(f => {
-            const chg = f.fcstChange ? f.fcstChange : "BASE";
-            const wind = (f.wdir != null && f.wspd != null)
-              ? `${String(f.wdir).padStart(3,"0")}@${f.wspd}${f.wgst ? "G"+f.wgst : ""}KT`
-              : "";
-            const vis  = (f.visib != null) ? `${f.visib}SM` : "";
-            const wx   = f.wxString ? f.wxString : "";
-            const cig  = (Array.isArray(f.clouds) && f.clouds[0] && f.clouds[0].cover && f.clouds[0].base)
-              ? `${f.clouds[0].cover}${Math.round(f.clouds[0].base/100).toString().padStart(3,"0")}`
-              : "";
-            return `${chg} ${fmtUnixLocal(f.timeFrom)}–${fmtUnixLocal(f.timeTo)} ${wind} ${vis} ${wx} ${cig}`.replace(/\s+/g," ").trim();
-          });
-
-          tafsummary.textContent = parts.join("  |  ");
-        } else {
-          tafsummary.textContent = "No forecast groups returned.";
-        }
-
-      } catch (e) {
-        tafraw.textContent = `ERROR loading TAF: ${e.message}`;
-        tafraw.classList.add("error");
-        tafmeta.textContent = "";
-        tafsummary.textContent = "";
-      }
-    }
-
-    function init() {
-      setClock();
-      $("windy").src = WINDY_URL;
-
-      // initial loads
-      loadMetar();
-      loadTaf();
-
-      // refresh cadence
-      setInterval(setClock, 1000 * 10);
-      setInterval(loadMetar, 1000 * 60);       // METAR ~1 min
-      setInterval(loadTaf,  1000 * 5 * 60);    // TAF ~5 min
-    }
-
-    init();
-  </script>
-</body>
-</html>
+      return Number.isFinite(vis) ? vis
