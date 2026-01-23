@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>KFOE Field Conditions & Weather</title>
+  <style>
+    :root { --bg:#0b0f14; --card:#111823; --text:#e8eef6; --muted:#9fb0c3; --accent:#57a6ff; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background:var(--bg); color:var(--text); }
+    .wrap { height:100vh; display:grid; grid-template-rows:auto 1fr; gap:12px; padding:16px; }
+    header { display:flex; align-items:baseline; justify-content:space-between; gap:16px; }
+    .title { font-size:28px; font-weight:700; letter-spacing:0.5px; }
+    .subtitle { color:var(--muted); font-size:14px; }
+    .grid { height:100%; display:grid; grid-template-columns: 1.05fr 0.95fr; gap:12px; }
+    .card { background:var(--card); border:1px solid rgba(255,255,255,0.06); border-radius:16px; padding:14px; overflow:hidden; }
+    .card h2 { margin:0 0 10px 0; font-size:16px; color:var(--muted); font-weight:600; letter-spacing:0.4px; }
+    .kv { display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:10px; }
+    .pill { padding:10px 12px; border-radius:12px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.06); }
+    .pill .k { font-size:12px; color:var(--muted); margin-bottom:4px; }
+    .pill .v { font-size:18px; font-weight:700; }
+    pre { margin:0; white-space:pre-wrap; word-break:break-word; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; font-size:14px; line-height:1.25; color:#d7e3f3; }
+    .row { display:grid; grid-template-rows:auto 1fr; gap:10px; height:100%; }
+    iframe { width:100%; height:100%; border:0; border-radius:12px; background:#000; }
+    .small { color:var(--muted); font-size:12px; }
+    .accent { color: var(--accent); font-weight:700; }
+    .error { color:#ff6b6b; font-weight:700; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div>
+        <div class="title">KFOE — Forbes Field</div>
+        <div class="subtitle">METAR/TAF + Radar (Windy) • Auto-refresh</div>
+      </div>
+      <div class="subtitle" id="clock"></div>
+    </header>
+
+    <div class="grid">
+      <div class="card row">
+        <div>
+          <h2>METAR (Decoded Highlights + Raw)</h2>
+          <div class="kv">
+            <div class="pill"><div class="k">Flight Category</div><div class="v" id="fltcat">—</div></div>
+            <div class="pill"><div class="k">Wind</div><div class="v" id="wind">—</div></div>
+            <div class="pill"><div class="k">Visibility</div><div class="v" id="vis">—</div></div>
+            <div class="pill"><div class="k">Ceiling</div><div class="v" id="cig">—</div></div>
+            <div class="pill"><div class="k">Temp / Dew</div><div class="v" id="tempdew">—</div></div>
+            <div class="pill"><div class="k">Altimeter</div><div class="v" id="altim">—</div></div>
+          </div>
+          <div class="small">Obs time: <span class="accent" id="obstime">—</span> • Age: <span class="accent" id="age">—</span></div>
+        </div>
+        <pre id="metarraw">Loading…</pre>
+      </div>
+
+      <div class="card row">
+        <div>
+          <h2>TAF (Raw)</h2>
+          <div class="small">Issued/valid per product. Auto-refresh.</div>
+        </div>
+        <pre id="tafraw">Loading…</pre>
+      </div>
+
+      <div class="card" style="grid-column: 1 / span 2; height:42vh;">
+        <h2>Radar / Weather Map (Windy embed)</h2>
+        <iframe id="windy" loading="lazy" referrerpolicy="no-referrer"></iframe>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ====== CONFIG (ONLY THINGS YOU SHOULD EDIT) ======
+    const STATION = "KFOE";
+
+    // Put your Worker base URL here (no trailing slash), e.g.:
+    // https://kfoe-awc-proxy.<your-subdomain>.workers.dev
+    const PROXY_BASE = "https://kfoe-awc-proxy.<your-subdomain>.workers.dev";
+
+    // KFOE approximate airport coordinates for centering Windy:
+    // 38.95083, -95.66361 :contentReference[oaicite:7]{index=7}
+    const LAT = 38.95083;
+    const LON = -95.66361;
+
+    // ====== WINDY EMBED URL ======
+    // This parameter pattern is widely used in Windy embed examples. :contentReference[oaicite:8]{index=8}
+    const WINDY_URL =
+      "https://embed.windy.com/embed2.html" +
+      `?lat=${encodeURIComponent(LAT)}` +
+      `&lon=${encodeURIComponent(LON)}` +
+      `&detailLat=${encodeURIComponent(LAT)}` +
+      `&detailLon=${encodeURIComponent(LON)}` +
+      "&width=100%&height=100%" +
+      "&zoom=9&level=surface" +
+      "&overlay=rain" +
+      "&product=ecmwf" +
+      "&menu=&message=true&marker=true" +
+      "&calendar=now&pressure=true" +
+      "&type=map&location=coordinates&detail=true" +
+      "&metricWind=default&metricTemp=default&radarRange=-1";
+
+    // ====== HELPERS ======
+    const $ = (id) => document.getElementById(id);
+
+    function setClock() {
+      const now = new Date();
+      $("clock").textContent = now.toLocaleString();
+    }
+
+    function safe(v, fallback="—") {
+      return (v === undefined || v === null || v === "") ? fallback : v;
+    }
+
+    function parseCeilingFromClouds(clouds) {
+      // clouds often looks like [{cover:"BKN", base:1200}, ...]
+      if (!Array.isArray(clouds) || !clouds.length) return "—";
+      const candidates = clouds
+        .filter(c => ["BKN","OVC","VV"].includes((c.cover || "").toUpperCase()) && Number.isFinite(c.base))
+        .sort((a,b) => a.base - b.base);
+      if (!candidates.length) return "—";
+      return `${candidates[0].cover} ${candidates[0].base} ft`;
+    }
+
+    function computeAgeMinutes(isoTime) {
+      if (!isoTime) return "—";
+      const t = new Date(isoTime).getTime();
+      if (!Number.isFinite(t)) return "—";
+      const mins = Math.round((Date.now() - t) / 60000);
+      return (mins >= 0) ? `${mins} min` : "—";
+    }
+
+    async function fetchJSON(path) {
+      const url = `${PROXY_BASE}${path}`;
+      const res = await fetch(url, { cache: "no-store" });
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+      return res.json();
+    }
+
+    async function loadMetar() {
+      const metarraw = $("metarraw");
+      try {
+        const arr = await fetchJSON(`/metar?ids=${encodeURIComponent(STATION)}`);
+        const m = (Array.isArray(arr) && arr.length) ? arr[0] : null;
+        if (!m) throw new Error("No METAR returned");
+
+        // Raw text is typically in a "rawOb" style field; fall back to JSON stringify if needed.
+        metarraw.textContent = safe(m.rawOb || m.raw || m.text, JSON.stringify(m, null, 2));
+
+        $("fltcat").textContent = safe(m.fltCat);
+        $("wind").textContent = safe(m.wdir !== undefined && m.wspd !== undefined
+          ? `${m.wdir}° @ ${m.wspd} kt${m.wgst ? " G" + m.wgst : ""}`
+          : "—");
+
+        $("vis").textContent = safe(m.visib !== undefined ? `${m.visib} sm` : "—");
+        $("cig").textContent = parseCeilingFromClouds(m.clouds);
+        $("tempdew").textContent = (m.temp !== undefined && m.dewp !== undefined)
+          ? `${m.temp}°C / ${m.dewp}°C`
+          : "—";
+        $("altim").textContent = safe(m.altim !== undefined ? `A${m.altim}` : "—");
+
+        $("obstime").textContent = safe(m.obsTime || m.reportTime || m.time);
+        $("age").textContent = computeAgeMinutes(m.obsTime || m.reportTime || m.time);
+
+      } catch (e) {
+        metarraw.textContent = `ERROR loading METAR: ${e.message}`;
+        metarraw.classList.add("error");
+      }
+    }
+
+    async function loadTaf() {
+      const tafraw = $("tafraw");
+      try {
+        const arr = await fetchJSON(`/taf?ids=${encodeURIComponent(STATION)}`);
+        const t = (Array.isArray(arr) && arr.length) ? arr[0] : null;
+        if (!t) throw new Error("No TAF returned");
+        tafraw.textContent = safe(t.rawOb || t.raw || t.text, JSON.stringify(t, null, 2));
+      } catch (e) {
+        tafraw.textContent = `ERROR loading TAF: ${e.message}`;
+        tafraw.classList.add("error");
+      }
+    }
+
+    function init() {
+      setClock();
+      $("windy").src = WINDY_URL;
+
+      // initial loads
+      loadMetar();
+      loadTaf();
+
+      // refresh cadence (dashboard-level)
+      setInterval(setClock, 1000 * 10);
+      setInterval(loadMetar, 1000 * 60);   // METAR ~1 min
+      setInterval(loadTaf,  1000 * 5 * 60); // TAF ~5 min
+    }
+
+    init();
+  </script>
+</body>
+</html>
