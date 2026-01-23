@@ -56,16 +56,9 @@
 
     .error { color:#ff6b6b; font-weight:700; }
 
-    /* TAF line cards */
-    .tafLines { display:flex; flex-direction:column; gap:8px; overflow:auto; padding-right:4px; }
-    .tafLine {
-      padding:10px 12px;
-      border-radius:12px;
-      background:rgba(255,255,255,0.03);
-      border:1px solid rgba(255,255,255,0.06);
-    }
-    .tafMeta { font-size:11px; color:var(--muted); margin-bottom:6px; }
-    .tafText { font-weight:800; }
+    /* Raw TAF block but line-by-line spans */
+    .tafBlock { overflow:auto; padding-right:4px; }
+    .tafLine { display:block; } /* each line is a span rendered as a block */
   </style>
 </head>
 
@@ -101,11 +94,12 @@
       <!-- TAF -->
       <div class="card row">
         <div>
-          <h2>TAF (Line-by-line Category)</h2>
+          <h2>TAF (Raw with Line Breaks + Colors)</h2>
           <div class="small" id="tafmeta">Loading…</div>
         </div>
 
-        <div id="tafLines" class="tafLines"></div>
+        <!-- We render spans inside here so each line can be colored -->
+        <div id="tafBlock" class="tafBlock mono cat-unk">Loading…</div>
       </div>
 
       <!-- Radar -->
@@ -161,7 +155,6 @@
     }
 
     function ceilingFeetFromClouds(clouds) {
-      // returns lowest BKN/OVC/VV base in feet, else null
       if (!Array.isArray(clouds) || !clouds.length) return null;
       const candidates = clouds
         .filter(c => ["BKN","OVC","VV"].includes(String(c.cover || "").toUpperCase()) && Number.isFinite(c.base))
@@ -189,10 +182,6 @@
     }
 
     function flightCategoryFrom(visSM, ceilFT) {
-      // worst-of rule using standard thresholds
-      const vis = visSM;
-      const ceil = ceilFT;
-
       function visCat(v) {
         if (v == null) return null;
         if (v < 1) return "LIFR";
@@ -208,12 +197,12 @@
         return "VFR";
       }
 
-      const a = visCat(vis);
-      const b = ceilCat(ceil);
+      const a = visCat(visSM);
+      const b = ceilCat(ceilFT);
 
       if (a && b) {
         const rank = {LIFR:0, IFR:1, MVFR:2, VFR:3};
-        return (rank[a] < rank[b]) ? a : b;
+        return (rank[a] < rank[b]) ? a : b; // worse of the two
       }
       return a || b || "UNK";
     }
@@ -241,12 +230,12 @@
       return res.json();
     }
 
-    function splitTAFIntoGroups(rawTAF) {
-      // Turn a single-line TAF into "group lines" by inserting breaks before FM/TEMPO/BECMG/PROBxx
+    // Insert simple line breaks before major TAF change tokens, but keep it "raw"
+    function tafRawToLines(rawTAF) {
       const s = String(rawTAF || "").trim();
       if (!s) return [];
       const normalized = s
-        .replace(/^TAF\s+/i, "")                 // drop leading "TAF " if present
+        .replace(/^TAF\s+/i, "TAF ")              // normalize header
         .replace(/\s+(FM\d{6})/g, "\n$1")
         .replace(/\s+(TEMPO)/g, "\n$1")
         .replace(/\s+(BECMG)/g, "\n$1")
@@ -293,8 +282,10 @@
 
     async function loadTaf() {
       const tafmeta = $("tafmeta");
-      const holder = $("tafLines");
-      holder.innerHTML = "";
+      const tafBlock = $("tafBlock");
+      tafBlock.className = "tafBlock mono cat-unk";
+      tafBlock.textContent = "";
+      tafBlock.innerHTML = "";
 
       try {
         const arr = await fetchJSON(`/taf?ids=${encodeURIComponent(STATION)}`);
@@ -305,53 +296,41 @@
           `Issued: ${safe(t.issueTime)} • Bulletin: ${safe(t.bulletinTime)} • Valid: ${fmtUnixLocal(t.validTimeFrom)}–${fmtUnixLocal(t.validTimeTo)}`;
 
         const raw = t.rawTAF || t.rawOb || t.raw || t.text || "";
-        const lines = splitTAFIntoGroups(raw);
+        const lines = tafRawToLines(raw);
 
-        // Map each rendered line to fcsts[i] when available; otherwise compute UNKNOWN
-        // (In practice, fcsts is usually aligned with the progression of groups.)
+        // fcsts are the decoded forecast groups; we use them to compute category per line.
         const fcsts = Array.isArray(t.fcsts) ? t.fcsts : [];
 
-        lines.forEach((txt, i) => {
+        if (!lines.length) {
+          tafBlock.textContent = "No TAF text returned.";
+          return;
+        }
+
+        // Render each "raw" line as a colored span with a newline after it
+        lines.forEach((line, i) => {
           const f = fcsts[i] || null;
 
           const visN = f ? visToNumber(f.visib) : null;
           const ceil = f ? ceilingFeetFromClouds(f.clouds) : null;
           const cat = f ? flightCategoryFrom(visN, ceil) : "UNK";
 
-          const div = document.createElement("div");
-          div.className = `tafLine ${catClass(cat)}`;
+          const span = document.createElement("span");
+          span.className = `tafLine ${catClass(cat)}`;
+          span.textContent = line;
 
-          const meta = document.createElement("div");
-          meta.className = "tafMeta";
-          meta.textContent = `${cat}${f && f.fcstChange ? " • " + f.fcstChange : ""}`;
-
-          const body = document.createElement("div");
-          body.className = "tafText mono";
-          body.textContent = txt;
-
-          div.appendChild(meta);
-          div.appendChild(body);
-          holder.appendChild(div);
+          tafBlock.appendChild(span);
+          tafBlock.appendChild(document.createTextNode("\n"));
         });
-
-        if (!lines.length) {
-          const d = document.createElement("div");
-          d.className = "tafLine cat-unk";
-          d.innerHTML = `<div class="tafMeta">No rawTAF available</div><div class="tafText mono">—</div>`;
-          holder.appendChild(d);
-        }
 
       } catch (e) {
         tafmeta.textContent = "";
-        const d = document.createElement("div");
-        d.className = "tafLine";
-        d.innerHTML = `<div class="tafMeta error">ERROR loading TAF</div><div class="tafText mono error">${e.message}</div>`;
-        holder.appendChild(d);
+        tafBlock.textContent = `ERROR loading TAF: ${e.message}`;
+        tafBlock.className = "tafBlock mono error";
       }
     }
 
     function init() {
-      // If anything breaks, show it visibly (so you never get silent "Loading..." again)
+      // Make any script failure visible
       window.addEventListener("error", (ev) => {
         const metarraw = $("metarraw");
         if (metarraw && metarraw.textContent.startsWith("Loading")) {
