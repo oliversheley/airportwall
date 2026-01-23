@@ -59,12 +59,19 @@
       margin-top:2px;
     }
 
-    .grid{
+    /* ===== Two-halves layout ===== */
+    .main{
       height:100%;
       min-height:0;
       display:grid;
-      grid-template-columns: 1fr 1fr;
-      grid-template-rows: 1fr 1fr;
+      grid-template-columns: 1fr 1fr; /* left / right halves */
+      gap:12px;
+    }
+
+    .col{
+      min-height:0;
+      display:grid;
+      grid-template-rows: 1fr 1fr;   /* top/bottom within each half */
       gap:12px;
     }
 
@@ -76,6 +83,8 @@
       overflow:hidden;
       box-shadow: 0 10px 30px rgba(0,0,0,0.25);
       min-height:0;
+      display:flex;
+      flex-direction:column;
     }
 
     .card h2{
@@ -84,11 +93,8 @@
       color:var(--muted);
       font-weight:700;
       letter-spacing:0.3px;
+      flex:0 0 auto;
     }
-
-    .metarCard{ grid-column:1; grid-row:1; display:flex; flex-direction:column; min-height:0; }
-    .tafCard  { grid-column:2; grid-row:1; display:flex; flex-direction:column; min-height:0; }
-    .radarCard{ grid-column:1 / span 2; grid-row:2; display:flex; flex-direction:column; min-height:0; }
 
     iframe{
       width:100%;
@@ -110,6 +116,7 @@
     .cat-unk{ color:var(--unk); }
     .error{ color:#ff6b6b; font-weight:800; }
 
+    /* ===== METAR ===== */
     .metarTop{
       display:flex;
       align-items:center;
@@ -121,7 +128,6 @@
       margin-bottom:10px;
       flex:0 0 auto;
     }
-
     .catBadge{
       display:flex;
       align-items:center;
@@ -144,7 +150,7 @@
     }
 
     .metarRaw{
-      font-size:clamp(13px, 1.15vw, 18px);
+      font-size:clamp(13px, 1.05vw, 17px);
       font-weight:900;
       padding:10px 12px;
       border-radius:14px;
@@ -182,14 +188,14 @@
 
     .kvLabel{
       color:rgba(255,255,255,0.92);
-      font-size:clamp(13px, 1.05vw, 18px);
+      font-size:clamp(12px, 0.95vw, 16px);
       font-weight:800;
       text-align:center;
       line-height:1.1;
     }
     .kvValue{
       color:var(--mvfr);
-      font-size:clamp(14px, 1.15vw, 20px);
+      font-size:clamp(13px, 1.05vw, 18px);
       font-weight:900;
       text-align:center;
       letter-spacing:0.2px;
@@ -204,6 +210,7 @@
       color:var(--muted);
     }
 
+    /* ===== TAF ===== */
     .tafHeader{ flex:0 0 auto; }
     .tafBlock{
       flex:1 1 auto;
@@ -225,74 +232,83 @@
     <header>
       <div>
         <div class="title">KFOE — Forbes Field</div>
-        <div class="subtitle">METAR/TAF + Radar (Windy) • Auto-refresh</div>
+        <div class="subtitle">METAR/TAF + Radar/Forecast • Auto-refresh</div>
       </div>
       <div class="subtitle" id="clock"></div>
     </header>
 
-    <div class="grid">
-      <!-- METAR -->
-      <div class="card metarCard">
-        <h2>METAR</h2>
+    <div class="main">
+      <!-- LEFT HALF: METAR + TAF -->
+      <div class="col">
+        <!-- METAR -->
+        <div class="card">
+          <h2>METAR</h2>
 
-        <div class="metarTop">
-          <div class="catBadge">
-            <span id="catDot" class="dot" style="background: var(--unk);"></span>
-            <span id="catText" class="cat-unk">—</span>
+          <div class="metarTop">
+            <div class="catBadge">
+              <span id="catDot" class="dot" style="background: var(--unk);"></span>
+              <span id="catText" class="cat-unk">—</span>
+            </div>
+            <div id="ageBadge" class="ageBadge">—</div>
           </div>
-          <div id="ageBadge" class="ageBadge">—</div>
+
+          <div id="metarraw" class="metarRaw mono cat-unk">Loading…</div>
+
+          <div class="kvTable">
+            <div class="kvRow">
+              <div class="kvLabel">Time</div>
+              <div class="kvValue" id="m_time">—</div>
+            </div>
+            <div class="kvRow">
+              <div class="kvLabel">Wind</div>
+              <div class="kvValue" id="m_wind">—</div>
+            </div>
+            <div class="kvRow">
+              <div class="kvLabel">Visibility</div>
+              <div class="kvValue" id="m_vis">—</div>
+            </div>
+            <div class="kvRow">
+              <div class="kvLabel">Clouds (AGL)</div>
+              <div class="kvValue" id="m_clouds">—</div>
+            </div>
+            <div class="kvRow">
+              <div class="kvLabel">Temperature</div>
+              <div class="kvValue" id="m_temp">—</div>
+            </div>
+            <div class="kvRow">
+              <div class="kvLabel">Dewpoint</div>
+              <div class="kvValue" id="m_dew">—</div>
+            </div>
+            <div class="kvRow">
+              <div class="kvLabel">Altimeter</div>
+              <div class="kvValue" id="m_alt">—</div>
+            </div>
+          </div>
+
+          <div class="obsLine">Obs time: <span class="accent" id="obstime">—</span></div>
         </div>
 
-        <div id="metarraw" class="metarRaw mono cat-unk">Loading…</div>
-
-        <div class="kvTable">
-          <div class="kvRow">
-            <div class="kvLabel">Time</div>
-            <div class="kvValue" id="m_time">—</div>
+        <!-- TAF -->
+        <div class="card">
+          <div class="tafHeader">
+            <h2>TAF (Raw with Line Breaks + Colors)</h2>
+            <div class="small" id="tafmeta">Loading…</div>
           </div>
-          <div class="kvRow">
-            <div class="kvLabel">Wind</div>
-            <div class="kvValue" id="m_wind">—</div>
-          </div>
-          <div class="kvRow">
-            <div class="kvLabel">Visibility</div>
-            <div class="kvValue" id="m_vis">—</div>
-          </div>
-          <div class="kvRow">
-            <div class="kvLabel">Clouds (AGL)</div>
-            <div class="kvValue" id="m_clouds">—</div>
-          </div>
-          <div class="kvRow">
-            <div class="kvLabel">Temperature</div>
-            <div class="kvValue" id="m_temp">—</div>
-          </div>
-          <div class="kvRow">
-            <div class="kvLabel">Dewpoint</div>
-            <div class="kvValue" id="m_dew">—</div>
-          </div>
-          <div class="kvRow">
-            <div class="kvLabel">Altimeter</div>
-            <div class="kvValue" id="m_alt">—</div>
-          </div>
+          <div id="tafBlock" class="tafBlock mono cat-unk">Loading…</div>
         </div>
-
-        <div class="obsLine">Obs time: <span class="accent" id="obstime">—</span></div>
       </div>
 
-      <!-- TAF -->
-      <div class="card tafCard">
-        <div class="tafHeader">
-          <h2>TAF (Raw with Line Breaks + Colors)</h2>
-          <div class="small" id="tafmeta">Loading…</div>
+      <!-- RIGHT HALF: RADAR + FORECAST -->
+      <div class="col">
+        <div class="card">
+          <h2>Radar / Weather Map (Windy embed)</h2>
+          <iframe id="windyRadar" loading="lazy" referrerpolicy="no-referrer"></iframe>
         </div>
 
-        <div id="tafBlock" class="tafBlock mono cat-unk">Loading…</div>
-      </div>
-
-      <!-- Radar -->
-      <div class="card radarCard">
-        <h2>Radar / Weather Map (Windy embed)</h2>
-        <iframe id="windy" loading="lazy" referrerpolicy="no-referrer"></iframe>
+        <div class="card">
+          <h2>Forecast (Placeholder)</h2>
+          <iframe id="forecastFrame" loading="lazy" referrerpolicy="no-referrer"></iframe>
+        </div>
       </div>
     </div>
   </div>
@@ -300,13 +316,16 @@
   <script>
     "use strict";
 
+    // ====== CONFIG ======
     const STATION = "KFOE";
     const PROXY_BASE = "https://kfoe-awc-proxy.oliversheley.workers.dev";
 
+    // Forbes Field vicinity
     const LAT = 38.95083;
     const LON = -95.66361;
 
-    const WINDY_URL =
+    // Windy radar/map
+    const WINDY_RADAR_URL =
       "https://embed.windy.com/embed2.html" +
       `?lat=${encodeURIComponent(LAT)}` +
       `&lon=${encodeURIComponent(LON)}` +
@@ -318,13 +337,17 @@
       "&product=ecmwf" +
       "&menu=&message=true&marker=true" +
       "&calendar=now&pressure=true" +
-      "&type=map&location=coordinates&detail=true"
-      + "&metricWind=default&metricTemp=default&radarRange=-1";
+      "&type=map&location=coordinates&detail=true" +
+      "&metricWind=default&metricTemp=default&radarRange=-1";
 
+    // Forecast placeholder (replace later with your preferred forecast source)
+    const FORECAST_URL = "about:blank";
+
+    // ====== STATE ======
     let lastObsMs = null;
 
+    // ====== HELPERS ======
     const $ = (id) => document.getElementById(id);
-
     function setClock(){ $("clock").textContent = new Date().toLocaleString(); }
     function safe(v, fallback="—"){ return (v === undefined || v === null || v === "") ? fallback : v; }
 
@@ -422,6 +445,7 @@
       return res.json();
     }
 
+    // TAF helpers
     function tafRawToLines(rawTAF){
       const s = String(rawTAF || "").trim();
       if (!s) return [];
@@ -483,6 +507,7 @@
       return d.toLocaleString([], { month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit" });
     }
 
+    // ====== LOADERS ======
     async function loadMetar(){
       const metarraw = $("metarraw");
       metarraw.className = "metarRaw mono cat-unk";
@@ -506,7 +531,6 @@
 
         $("obstime").textContent = formatObsLineFromMs(lastObsMs);
         refreshAgeOnly();
-
         $("m_time").textContent = formatLocalTimeWithTZFromMs(lastObsMs);
 
         const windTxt = (m.wdir != null && m.wspd != null)
@@ -596,13 +620,18 @@
 
     function init(){
       setClock();
-      $("windy").src = WINDY_URL;
+
+      $("windyRadar").src = WINDY_RADAR_URL;
+      $("forecastFrame").src = FORECAST_URL;
 
       loadMetar();
       loadTaf();
 
       setInterval(setClock, 10_000);
-      setInterval(refreshAgeOnly, 30_000);
+      setInterval(() => {
+        const mins = (lastObsMs == null) ? null : Math.round((Date.now() - lastObsMs) / 60000);
+        $("ageBadge").textContent = (mins == null || mins < 0 || mins > 10080) ? "—" : `${mins}m ago`;
+      }, 30_000);
 
       setInterval(loadMetar, 60_000);
       setInterval(loadTaf,  5 * 60_000);
