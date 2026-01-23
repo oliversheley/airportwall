@@ -8,12 +8,12 @@
     :root {
       --bg:#0b0f14; --card:#111823; --text:#e8eef6; --muted:#9fb0c3; --accent:#57a6ff;
 
-      /* Category colors (pilot-standard-ish) */
+      /* Flight category colors */
       --vfr:#2bdc4f;     /* green */
       --mvfr:#4aa3ff;    /* blue */
       --ifr:#ff4d4d;     /* red */
-      --lifr:#c84dff;    /* magenta/purple */
-      --unknown:#d7e3f3; /* default text */
+      --lifr:#c84dff;    /* magenta */
+      --unk:#d7e3f3;     /* default */
     }
 
     * { box-sizing: border-box; }
@@ -37,9 +37,7 @@
 
     .small { color:var(--muted); font-size:12px; }
     .accent { color: var(--accent); font-weight:700; }
-    .error { color:#ff6b6b; font-weight:700; }
 
-    /* Monospace blocks */
     .mono {
       margin:0;
       white-space:pre-wrap;
@@ -50,22 +48,24 @@
     }
 
     /* Category classes */
-    .cat-vfr { color: var(--vfr); }
+    .cat-vfr  { color: var(--vfr); }
     .cat-mvfr { color: var(--mvfr); }
-    .cat-ifr { color: var(--ifr); }
+    .cat-ifr  { color: var(--ifr); }
     .cat-lifr { color: var(--lifr); }
-    .cat-unknown { color: var(--unknown); }
+    .cat-unk  { color: var(--unk); }
 
-    /* TAF lines */
-    .tafLines { display:flex; flex-direction:column; gap:6px; overflow:auto; padding-right:4px; }
+    .error { color:#ff6b6b; font-weight:700; }
+
+    /* TAF line cards */
+    .tafLines { display:flex; flex-direction:column; gap:8px; overflow:auto; padding-right:4px; }
     .tafLine {
-      padding:8px 10px;
+      padding:10px 12px;
       border-radius:12px;
       background:rgba(255,255,255,0.03);
       border:1px solid rgba(255,255,255,0.06);
     }
-    .tafLine .meta { font-size:11px; color:var(--muted); margin-bottom:4px; }
-    .tafLine .txt { font-weight:700; }
+    .tafMeta { font-size:11px; color:var(--muted); margin-bottom:6px; }
+    .tafText { font-weight:800; }
   </style>
 </head>
 
@@ -95,8 +95,7 @@
           <div class="small">Obs time: <span class="accent" id="obstime">—</span> • Age: <span class="accent" id="age">—</span></div>
         </div>
 
-        <!-- Raw METAR (colored by category) -->
-        <div id="metarraw" class="mono cat-unknown">Loading…</div>
+        <pre id="metarraw" class="mono cat-unk">Loading…</pre>
       </div>
 
       <!-- TAF -->
@@ -104,10 +103,8 @@
         <div>
           <h2>TAF (Line-by-line Category)</h2>
           <div class="small" id="tafmeta">Loading…</div>
-          <div class="small" id="tafrawheader"></div>
         </div>
 
-        <!-- TAF lines (each line colored by computed category) -->
         <div id="tafLines" class="tafLines"></div>
       </div>
 
@@ -120,11 +117,12 @@
   </div>
 
   <script>
+    "use strict";
+
     // ====== CONFIG ======
     const STATION = "KFOE";
     const PROXY_BASE = "https://kfoe-awc-proxy.oliversheley.workers.dev";
 
-    // KFOE approx coords (map center)
     const LAT = 38.95083;
     const LON = -95.66361;
 
@@ -154,22 +152,6 @@
       return (v === undefined || v === null || v === "") ? fallback : v;
     }
 
-    function parseCeilingFromClouds(clouds) {
-      if (!Array.isArray(clouds) || !clouds.length) return null;
-      const candidates = clouds
-        .filter(c => ["BKN","OVC","VV"].includes((c.cover || "").toUpperCase()) && Number.isFinite(c.base))
-        .sort((a,b) => a.base - b.base);
-      return candidates.length ? candidates[0].base : null; // feet
-    }
-
-    function formatCeilingLabel(clouds) {
-      const base = parseCeilingFromClouds(clouds);
-      if (base == null) return "—";
-      const top = (clouds || []).find(c => ["BKN","OVC","VV"].includes((c.cover || "").toUpperCase()) && c.base === base);
-      const cover = top?.cover || "CIG";
-      return `${cover} ${base} ft`;
-    }
-
     function computeAgeMinutes(isoTime) {
       if (!isoTime) return "—";
       const t = new Date(isoTime).getTime();
@@ -178,69 +160,78 @@
       return (mins >= 0) ? `${mins} min` : "—";
     }
 
-    function fmtUnixLocal(unixSec) {
-      if (!unixSec || !Number.isFinite(unixSec)) return "—";
-      const d = new Date(unixSec * 1000);
-      return d.toLocaleString([], { month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit" });
+    function ceilingFeetFromClouds(clouds) {
+      // returns lowest BKN/OVC/VV base in feet, else null
+      if (!Array.isArray(clouds) || !clouds.length) return null;
+      const candidates = clouds
+        .filter(c => ["BKN","OVC","VV"].includes(String(c.cover || "").toUpperCase()) && Number.isFinite(c.base))
+        .sort((a,b) => a.base - b.base);
+      return candidates.length ? candidates[0].base : null;
+    }
+
+    function formatCeilingLabel(clouds) {
+      const base = ceilingFeetFromClouds(clouds);
+      if (base == null) return "—";
+      const coverObj = (clouds || []).find(c => ["BKN","OVC","VV"].includes(String(c.cover||"").toUpperCase()) && c.base === base);
+      const cover = coverObj?.cover || "CIG";
+      return `${cover} ${base} ft`;
     }
 
     function visToNumber(vis) {
-      // Handles: 6+, "6+", 2, "2", null
       if (vis == null) return null;
+      if (typeof vis === "number") return Number.isFinite(vis) ? vis : null;
       if (typeof vis === "string") {
         const s = vis.trim().replace("+", "");
         const n = Number(s);
         return Number.isFinite(n) ? n : null;
       }
-      return Number.isFinite(vis) ? vis : null;
+      return null;
     }
 
     function flightCategoryFrom(visSM, ceilFT) {
-      // Common thresholds:
-      // LIFR:  <1 SM OR <500 ft
-      // IFR:   1-<3 SM OR 500-<1000 ft
-      // MVFR:  3-5 SM OR 1000-<3000 ft
-      // VFR:   >5 SM AND >=3000 ft
-      //
-      // If one is missing, classify from the other when possible.
-      const vis = (visSM == null) ? null : visSM;
-      const ceil = (ceilFT == null) ? null : ceilFT;
+      // worst-of rule using standard thresholds
+      const vis = visSM;
+      const ceil = ceilFT;
 
-      const visCat = (v) => {
+      function visCat(v) {
         if (v == null) return null;
         if (v < 1) return "LIFR";
         if (v < 3) return "IFR";
         if (v <= 5) return "MVFR";
         return "VFR";
-      };
-
-      const ceilCat = (c) => {
+      }
+      function ceilCat(c) {
         if (c == null) return null;
         if (c < 500) return "LIFR";
         if (c < 1000) return "IFR";
         if (c < 3000) return "MVFR";
         return "VFR";
-      };
+      }
 
       const a = visCat(vis);
       const b = ceilCat(ceil);
 
       if (a && b) {
-        // return the worse of the two
-        const rank = { "LIFR":0, "IFR":1, "MVFR":2, "VFR":3 };
+        const rank = {LIFR:0, IFR:1, MVFR:2, VFR:3};
         return (rank[a] < rank[b]) ? a : b;
       }
-      return a || b || "UNKNOWN";
+      return a || b || "UNK";
     }
 
-    function catToClass(cat) {
-      switch ((cat || "").toUpperCase()) {
-        case "VFR": return "cat-vfr";
+    function catClass(cat) {
+      switch (String(cat || "").toUpperCase()) {
+        case "VFR":  return "cat-vfr";
         case "MVFR": return "cat-mvfr";
-        case "IFR": return "cat-ifr";
+        case "IFR":  return "cat-ifr";
         case "LIFR": return "cat-lifr";
-        default: return "cat-unknown";
+        default:     return "cat-unk";
       }
+    }
+
+    function fmtUnixLocal(unixSec) {
+      if (!unixSec || !Number.isFinite(unixSec)) return "—";
+      const d = new Date(unixSec * 1000);
+      return d.toLocaleString([], { month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit" });
     }
 
     async function fetchJSON(path) {
@@ -250,20 +241,31 @@
       return res.json();
     }
 
+    function splitTAFIntoGroups(rawTAF) {
+      // Turn a single-line TAF into "group lines" by inserting breaks before FM/TEMPO/BECMG/PROBxx
+      const s = String(rawTAF || "").trim();
+      if (!s) return [];
+      const normalized = s
+        .replace(/^TAF\s+/i, "")                 // drop leading "TAF " if present
+        .replace(/\s+(FM\d{6})/g, "\n$1")
+        .replace(/\s+(TEMPO)/g, "\n$1")
+        .replace(/\s+(BECMG)/g, "\n$1")
+        .replace(/\s+(PROB\d{2})/g, "\n$1");
+      return normalized.split("\n").map(x => x.trim()).filter(Boolean);
+    }
+
     // ====== LOADERS ======
     async function loadMetar() {
       const metarraw = $("metarraw");
-      metarraw.className = "mono cat-unknown";
+      metarraw.className = "mono cat-unk";
       try {
         const arr = await fetchJSON(`/metar?ids=${encodeURIComponent(STATION)}`);
         const m = (Array.isArray(arr) && arr.length) ? arr[0] : null;
         if (!m) throw new Error("No METAR returned");
 
-        // Raw string (field varies)
         const raw = safe(m.rawOb || m.raw || m.text, JSON.stringify(m, null, 2));
         metarraw.textContent = raw;
 
-        // Decoded highlights
         $("fltcat").textContent = safe(m.fltCat);
         $("wind").textContent = safe(
           (m.wdir !== undefined && m.wspd !== undefined)
@@ -281,66 +283,12 @@
         $("obstime").textContent = safe(obs);
         $("age").textContent = computeAgeMinutes(obs);
 
-        // Color METAR raw by category reported by the API
-        const metCat = (m.fltCat || "UNKNOWN");
-        metarraw.classList.add(catToClass(metCat));
+        metarraw.classList.add(catClass(m.fltCat));
 
       } catch (e) {
         metarraw.textContent = `ERROR loading METAR: ${e.message}`;
         metarraw.className = "mono error";
       }
-    }
-
-    function renderTafLines(t) {
-      const holder = $("tafLines");
-      holder.innerHTML = "";
-
-      // Header: show raw TAF headline (optional)
-      const rawTAF = t.rawTAF || t.rawOb || t.raw || t.text || "";
-      $("tafrawheader").textContent = rawTAF ? "Raw TAF loaded (line colors below computed per group)." : "";
-
-      if (!Array.isArray(t.fcsts) || !t.fcsts.length) {
-        const d = document.createElement("div");
-        d.className = "tafLine cat-unknown";
-        d.innerHTML = `<div class="meta">No forecast groups returned</div><div class="txt mono">—</div>`;
-        holder.appendChild(d);
-        return;
-      }
-
-      // Build a colored line for each forecast group
-      t.fcsts.forEach((f, idx) => {
-        const chg = f.fcstChange ? f.fcstChange : (idx === 0 ? "BASE" : "CONT");
-        const visN = visToNumber(f.visib);
-        const ceil = parseCeilingFromClouds(f.clouds);
-
-        const cat = flightCategoryFrom(visN, ceil);
-        const cls = catToClass(cat);
-
-        const wind = (f.wdir != null && f.wspd != null)
-          ? `${String(f.wdir).padStart(3,"0")}${String(f.wspd).padStart(2,"0")}${f.wgst ? "G"+String(f.wgst).padStart(2,"0") : ""}KT`
-          : "";
-
-        const vis = (f.visib != null) ? `P${f.visib}SM`.replace("PP", "P") : ""; // light cleanup
-        const wx = f.wxString ? f.wxString : "";
-
-        // TAF-style ceiling token (OVC011)
-        let cigTok = "";
-        if (Array.isArray(f.clouds) && f.clouds.length) {
-          const c = f.clouds.find(x => ["BKN","OVC","VV"].includes((x.cover || "").toUpperCase()) && Number.isFinite(x.base));
-          if (c) cigTok = `${c.cover}${Math.round(c.base/100).toString().padStart(3,"0")}`;
-        }
-
-        const timeWin = `${fmtUnixLocal(f.timeFrom)}–${fmtUnixLocal(f.timeTo)}`;
-        const lineTxt = [chg, timeWin, wind, (f.visib != null ? `${f.visib}SM` : ""), wx, cigTok].filter(Boolean).join(" ");
-
-        const card = document.createElement("div");
-        card.className = `tafLine ${cls}`;
-        card.innerHTML = `
-          <div class="meta">${cat} • ${chg}</div>
-          <div class="txt mono">${lineTxt}</div>
-        `;
-        holder.appendChild(card);
-      });
     }
 
     async function loadTaf() {
@@ -356,27 +304,71 @@
         tafmeta.textContent =
           `Issued: ${safe(t.issueTime)} • Bulletin: ${safe(t.bulletinTime)} • Valid: ${fmtUnixLocal(t.validTimeFrom)}–${fmtUnixLocal(t.validTimeTo)}`;
 
-        renderTafLines(t);
+        const raw = t.rawTAF || t.rawOb || t.raw || t.text || "";
+        const lines = splitTAFIntoGroups(raw);
+
+        // Map each rendered line to fcsts[i] when available; otherwise compute UNKNOWN
+        // (In practice, fcsts is usually aligned with the progression of groups.)
+        const fcsts = Array.isArray(t.fcsts) ? t.fcsts : [];
+
+        lines.forEach((txt, i) => {
+          const f = fcsts[i] || null;
+
+          const visN = f ? visToNumber(f.visib) : null;
+          const ceil = f ? ceilingFeetFromClouds(f.clouds) : null;
+          const cat = f ? flightCategoryFrom(visN, ceil) : "UNK";
+
+          const div = document.createElement("div");
+          div.className = `tafLine ${catClass(cat)}`;
+
+          const meta = document.createElement("div");
+          meta.className = "tafMeta";
+          meta.textContent = `${cat}${f && f.fcstChange ? " • " + f.fcstChange : ""}`;
+
+          const body = document.createElement("div");
+          body.className = "tafText mono";
+          body.textContent = txt;
+
+          div.appendChild(meta);
+          div.appendChild(body);
+          holder.appendChild(div);
+        });
+
+        if (!lines.length) {
+          const d = document.createElement("div");
+          d.className = "tafLine cat-unk";
+          d.innerHTML = `<div class="tafMeta">No rawTAF available</div><div class="tafText mono">—</div>`;
+          holder.appendChild(d);
+        }
 
       } catch (e) {
         tafmeta.textContent = "";
         const d = document.createElement("div");
         d.className = "tafLine";
-        d.innerHTML = `<div class="meta error">ERROR loading TAF</div><div class="txt mono error">${e.message}</div>`;
+        d.innerHTML = `<div class="tafMeta error">ERROR loading TAF</div><div class="tafText mono error">${e.message}</div>`;
         holder.appendChild(d);
       }
     }
 
     function init() {
+      // If anything breaks, show it visibly (so you never get silent "Loading..." again)
+      window.addEventListener("error", (ev) => {
+        const metarraw = $("metarraw");
+        if (metarraw && metarraw.textContent.startsWith("Loading")) {
+          metarraw.textContent = `SCRIPT ERROR: ${ev.message}`;
+          metarraw.className = "mono error";
+        }
+      });
+
       setClock();
       $("windy").src = WINDY_URL;
 
       loadMetar();
       loadTaf();
 
-      setInterval(setClock, 1000 * 10);
-      setInterval(loadMetar, 1000 * 60);       // METAR ~1 min
-      setInterval(loadTaf,  1000 * 5 * 60);    // TAF ~5 min
+      setInterval(setClock, 10_000);
+      setInterval(loadMetar, 60_000);
+      setInterval(loadTaf,  5 * 60_000);
     }
 
     init();
