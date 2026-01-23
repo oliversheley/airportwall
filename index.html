@@ -21,10 +21,10 @@
 
       --age:#ff9a3d;
       --divider:rgba(255,255,255,0.08);
-      --soft:rgba(255,255,255,0.04);
     }
 
-    *{box-sizing:border-box;}
+    *{ box-sizing:border-box; }
+    html, body{ height:100%; overflow:hidden; } /* no page scrolling */
     body{
       margin:0;
       font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
@@ -38,6 +38,7 @@
       grid-template-rows:auto 1fr;
       gap:12px;
       padding:16px;
+      min-height:0;
     }
 
     header{
@@ -52,17 +53,19 @@
       font-weight:800;
       letter-spacing:0.2px;
     }
-
     .subtitle{
       color:var(--muted);
       font-size:clamp(12px, 0.9vw, 14px);
       margin-top:2px;
     }
 
+    /* ======= MAIN EQUAL-SHARE GRID ======= */
     .grid{
       height:100%;
+      min-height:0;
       display:grid;
-      grid-template-columns: 1.05fr 0.95fr;
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: 1fr 1fr;     /* equal vertical shares */
       gap:12px;
     }
 
@@ -71,8 +74,9 @@
       border:1px solid rgba(255,255,255,0.06);
       border-radius:16px;
       padding:14px;
-      overflow:hidden;
+      overflow:hidden; /* never show scrollbars inside cards */
       box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+      min-height:0;
     }
 
     .card h2{
@@ -83,16 +87,14 @@
       letter-spacing:0.3px;
     }
 
-    .row{
-      display:grid;
-      grid-template-rows:auto 1fr;
-      gap:10px;
-      height:100%;
-    }
+    .metarCard{ grid-column:1; grid-row:1; display:flex; flex-direction:column; min-height:0; }
+    .tafCard  { grid-column:2; grid-row:1; display:flex; flex-direction:column; min-height:0; }
+    .radarCard{ grid-column:1 / span 2; grid-row:2; display:flex; flex-direction:column; min-height:0; }
 
     iframe{
       width:100%;
-      height:100%;
+      flex:1;
+      min-height:0;
       border:0;
       border-radius:12px;
       background:#000;
@@ -100,12 +102,7 @@
 
     .small{ color:var(--muted); font-size:12px; }
     .accent{ color:var(--accent); font-weight:800; }
-
-    .mono{
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-      white-space:pre-wrap;
-      word-break:break-word;
-    }
+    .mono{ font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
 
     /* Category classes */
     .cat-vfr{ color:var(--vfr); }
@@ -115,7 +112,7 @@
     .cat-unk{ color:var(--unk); }
     .error{ color:#ff6b6b; font-weight:800; }
 
-    /* METAR “app” look */
+    /* ===== METAR “app” look (tightened) ===== */
     .metarTop{
       display:flex;
       align-items:center;
@@ -125,6 +122,7 @@
       background:rgba(255,255,255,0.03);
       border:1px solid rgba(255,255,255,0.06);
       margin-bottom:10px;
+      flex:0 0 auto;
     }
 
     .catBadge{
@@ -135,24 +133,21 @@
       font-size:clamp(18px, 1.6vw, 26px);
       letter-spacing:0.4px;
     }
-
     .dot{
       width:22px;
       height:22px;
       border-radius:999px;
       box-shadow: 0 0 0 3px rgba(255,255,255,0.06) inset;
     }
-
     .ageBadge{
       font-weight:900;
       font-size:clamp(16px, 1.4vw, 24px);
       color:var(--age);
-      letter-spacing:0.2px;
       white-space:nowrap;
     }
 
     .metarRaw{
-      font-size:clamp(16px, 1.4vw, 22px);
+      font-size:clamp(14px, 1.25vw, 20px);
       font-weight:900;
       padding:12px 12px;
       border-radius:14px;
@@ -160,6 +155,9 @@
       border:1px solid rgba(255,255,255,0.06);
       margin-bottom:12px;
       line-height:1.25;
+      white-space:pre-wrap;
+      word-break:break-word;
+      flex:0 0 auto;
     }
 
     .kvTable{
@@ -167,13 +165,15 @@
       background:rgba(255,255,255,0.02);
       border:1px solid rgba(255,255,255,0.06);
       overflow:hidden;
+      flex:1 1 auto;
+      min-height:0;
     }
 
     .kvRow{
       display:grid;
       grid-template-columns: 1fr 1fr;
       gap:10px;
-      padding:12px 14px;
+      padding:clamp(8px, 1vh, 12px) 14px; /* tighter */
       border-top:1px solid var(--divider);
       align-items:center;
     }
@@ -181,25 +181,40 @@
 
     .kvLabel{
       color:rgba(255,255,255,0.92);
-      font-size:clamp(16px, 1.35vw, 22px);
+      font-size:clamp(14px, 1.2vw, 20px);
       font-weight:800;
       text-align:center;
     }
-
     .kvValue{
       color:var(--mvfr);
-      font-size:clamp(18px, 1.55vw, 26px);
+      font-size:clamp(16px, 1.35vw, 24px);
       font-weight:900;
       text-align:center;
       letter-spacing:0.2px;
     }
 
-    /* TAF block */
+    .obsLine{
+      margin-top:8px;
+      flex:0 0 auto;
+      font-size:12px;
+      color:var(--muted);
+    }
+
+    /* ===== TAF (no scrolling; fades out) ===== */
+    .tafHeader{ flex:0 0 auto; }
     .tafBlock{
-      overflow:auto;
-      padding-right:4px;
-      font-size:clamp(13px, 1.05vw, 16px);
+      flex:1 1 auto;
+      min-height:0;
+      white-space:pre-wrap;
+      word-break:break-word;
+      font-size:clamp(12px, 1.05vw, 15px);
       line-height:1.35;
+      overflow:hidden; /* no scrolling */
+      padding-right:4px;
+
+      /* fade at bottom so overflow feels intentional */
+      -webkit-mask-image: linear-gradient(to bottom, #000 85%, transparent);
+      mask-image: linear-gradient(to bottom, #000 85%, transparent);
     }
     .tafLine{ display:block; }
 
@@ -218,68 +233,64 @@
 
     <div class="grid">
       <!-- METAR -->
-      <div class="card row">
-        <div>
-          <h2>METAR</h2>
+      <div class="card metarCard">
+        <h2>METAR</h2>
 
-          <div class="metarTop">
-            <div class="catBadge">
-              <span id="catDot" class="dot" style="background: var(--unk);"></span>
-              <span id="catText" class="cat-unk">—</span>
-            </div>
-            <div id="ageBadge" class="ageBadge">—</div>
+        <div class="metarTop">
+          <div class="catBadge">
+            <span id="catDot" class="dot" style="background: var(--unk);"></span>
+            <span id="catText" class="cat-unk">—</span>
           </div>
+          <div id="ageBadge" class="ageBadge">—</div>
+        </div>
 
-          <div id="metarraw" class="metarRaw mono cat-unk">Loading…</div>
+        <div id="metarraw" class="metarRaw mono cat-unk">Loading…</div>
 
-          <div class="kvTable">
-            <div class="kvRow">
-              <div class="kvLabel">Time</div>
-              <div class="kvValue" id="m_time">—</div>
-            </div>
-            <div class="kvRow">
-              <div class="kvLabel">Wind</div>
-              <div class="kvValue" id="m_wind">—</div>
-            </div>
-            <div class="kvRow">
-              <div class="kvLabel">Visibility</div>
-              <div class="kvValue" id="m_vis">—</div>
-            </div>
-            <div class="kvRow">
-              <div class="kvLabel">Clouds (AGL)</div>
-              <div class="kvValue" id="m_clouds">—</div>
-            </div>
-            <div class="kvRow">
-              <div class="kvLabel">Temperature</div>
-              <div class="kvValue" id="m_temp">—</div>
-            </div>
-            <div class="kvRow">
-              <div class="kvLabel">Dewpoint</div>
-              <div class="kvValue" id="m_dew">—</div>
-            </div>
-            <div class="kvRow">
-              <div class="kvLabel">Altimeter</div>
-              <div class="kvValue" id="m_alt">—</div>
-            </div>
-            <div class="kvRow">
-              <div class="kvLabel">Humidity</div>
-              <div class="kvValue" id="m_rh">—</div>
-            </div>
-            <div class="kvRow">
-              <div class="kvLabel">Density Altitude</div>
-              <div class="kvValue" id="m_da">—</div>
-            </div>
+        <div class="kvTable">
+          <div class="kvRow">
+            <div class="kvLabel">Time</div>
+            <div class="kvValue" id="m_time">—</div>
           </div>
-
-          <div class="small" style="margin-top:10px;">
-            Obs time: <span class="accent" id="obstime">—</span>
+          <div class="kvRow">
+            <div class="kvLabel">Wind</div>
+            <div class="kvValue" id="m_wind">—</div>
+          </div>
+          <div class="kvRow">
+            <div class="kvLabel">Visibility</div>
+            <div class="kvValue" id="m_vis">—</div>
+          </div>
+          <div class="kvRow">
+            <div class="kvLabel">Clouds (AGL)</div>
+            <div class="kvValue" id="m_clouds">—</div>
+          </div>
+          <div class="kvRow">
+            <div class="kvLabel">Temperature</div>
+            <div class="kvValue" id="m_temp">—</div>
+          </div>
+          <div class="kvRow">
+            <div class="kvLabel">Dewpoint</div>
+            <div class="kvValue" id="m_dew">—</div>
+          </div>
+          <div class="kvRow">
+            <div class="kvLabel">Altimeter</div>
+            <div class="kvValue" id="m_alt">—</div>
+          </div>
+          <div class="kvRow">
+            <div class="kvLabel">Humidity</div>
+            <div class="kvValue" id="m_rh">—</div>
+          </div>
+          <div class="kvRow">
+            <div class="kvLabel">Density Altitude</div>
+            <div class="kvValue" id="m_da">—</div>
           </div>
         </div>
+
+        <div class="obsLine">Obs time: <span class="accent" id="obstime">—</span></div>
       </div>
 
       <!-- TAF -->
-      <div class="card row">
-        <div>
+      <div class="card tafCard">
+        <div class="tafHeader">
           <h2>TAF (Raw with Line Breaks + Colors)</h2>
           <div class="small" id="tafmeta">Loading…</div>
         </div>
@@ -288,7 +299,7 @@
       </div>
 
       <!-- Radar -->
-      <div class="card" style="grid-column: 1 / span 2; height:42vh;">
+      <div class="card radarCard">
         <h2>Radar / Weather Map (Windy embed)</h2>
         <iframe id="windy" loading="lazy" referrerpolicy="no-referrer"></iframe>
       </div>
@@ -302,7 +313,7 @@
     const STATION = "KFOE";
     const PROXY_BASE = "https://kfoe-awc-proxy.oliversheley.workers.dev";
 
-    // KFOE field elevation for DA calculation (approx). Change if desired.
+    // KFOE field elevation for DA calc (adjust if desired)
     const FIELD_ELEV_FT = 1033;
 
     const LAT = 38.95083;
@@ -329,13 +340,9 @@
     // ====== HELPERS ======
     const $ = (id) => document.getElementById(id);
 
-    function setClock(){
-      $("clock").textContent = new Date().toLocaleString();
-    }
+    function setClock(){ $("clock").textContent = new Date().toLocaleString(); }
 
-    function safe(v, fallback="—"){
-      return (v === undefined || v === null || v === "") ? fallback : v;
-    }
+    function safe(v, fallback="—"){ return (v === undefined || v === null || v === "") ? fallback : v; }
 
     function catClass(cat){
       switch (String(cat || "").toUpperCase()){
@@ -346,7 +353,6 @@
         default:     return "cat-unk";
       }
     }
-
     function catColorVar(cat){
       switch (String(cat || "").toUpperCase()){
         case "VFR":  return "var(--vfr)";
@@ -357,7 +363,7 @@
       }
     }
 
-    // Robust time parsing (ISO string OR unix seconds OR unix ms)
+    // Robust time parsing: ISO string OR unix seconds OR unix ms
     function parseTimeToMs(t){
       if (t == null) return null;
 
@@ -370,7 +376,6 @@
       if (typeof t === "string"){
         const s = t.trim();
 
-        // numeric string?
         if (/^\d{9,16}$/.test(s)){
           const n = Number(s);
           if (!Number.isFinite(n)) return null;
@@ -378,7 +383,6 @@
           if (n > 1e9)  return n * 1000;
         }
 
-        // ISO
         const ms = Date.parse(s);
         return Number.isFinite(ms) ? ms : null;
       }
@@ -389,24 +393,25 @@
     function computeAgeMinutesFromMs(ms){
       if (!Number.isFinite(ms)) return null;
       const diff = Date.now() - ms;
-      if (!Number.isFinite(diff)) return null;
-      if (diff < 0) return null;                 // future?
+      if (!Number.isFinite(diff) || diff < 0) return null;
       const mins = Math.round(diff / 60000);
-      // If something is wildly old, treat as invalid instead of showing absurd numbers
-      if (mins > 24 * 60 * 7) return null;       // > 7 days
+      if (mins > 24 * 60 * 7) return null; // > 7 days => show "—"
       return mins;
+    }
+
+    function refreshAgeOnly(){
+      const mins = computeAgeMinutesFromMs(lastObsMs);
+      $("ageBadge").textContent = (mins == null) ? "—" : `${mins}m ago`;
     }
 
     function formatLocalTimeWithTZFromMs(ms){
       if (!Number.isFinite(ms)) return "—";
-      const d = new Date(ms);
-      return d.toLocaleTimeString([], { hour:"2-digit", minute:"2-digit", timeZoneName:"short" });
+      return new Date(ms).toLocaleTimeString([], { hour:"2-digit", minute:"2-digit", timeZoneName:"short" });
     }
 
     function formatObsLineFromMs(ms){
       if (!Number.isFinite(ms)) return "—";
-      const d = new Date(ms);
-      return d.toLocaleString([], { month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit", timeZoneName:"short" });
+      return new Date(ms).toLocaleString([], { month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit", timeZoneName:"short" });
     }
 
     function ceilingFeetFromClouds(clouds){
@@ -424,18 +429,11 @@
       const pick = sorted.find(c => ["OVC","BKN","VV"].includes(String(c.cover||"").toUpperCase())) || sorted[0];
       const cover = String(pick.cover||"").toUpperCase();
       const base = pick.base;
-
-      const coverWord = ({
-        "OVC":"Overcast","BKN":"Broken","SCT":"Scattered","FEW":"Few","VV":"Vertical Vis"
-      })[cover] || cover;
-
+      const coverWord = ({OVC:"Overcast",BKN:"Broken",SCT:"Scattered",FEW:"Few",VV:"Vertical Vis"})[cover] || cover;
       return `${coverWord} ${base.toLocaleString()}′`;
     }
 
-    function cToF(c){
-      if (!Number.isFinite(c)) return null;
-      return (c * 9/5) + 32;
-    }
+    function cToF(c){ return Number.isFinite(c) ? (c * 9/5) + 32 : null; }
 
     function relHumidityPct(tempC, dewC){
       if (!Number.isFinite(tempC) || !Number.isFinite(dewC)) return null;
@@ -446,20 +444,15 @@
       return Math.max(0, Math.min(100, rh));
     }
 
-    // Interpret altimeter that might arrive as:
-    // - inHg (20–35)
-    // - hundredths inHg (2000–3500) e.g., 3066
-    // - hPa (800–1100) e.g., 1038
+    // altimeter might be inHg, hundredths inHg, or hPa
     function parseAltimeterInHg(alt){
       if (alt == null) return null;
       const n = Number(alt);
       if (!Number.isFinite(n)) return null;
 
-      if (n >= 20 && n <= 35) return n;                  // already inHg
-      if (n >= 2000 && n <= 3500) return n / 100;        // hundredths inHg -> inHg
-      if (n >= 800 && n <= 1100) return n * 0.029529983; // hPa -> inHg
-
-      // sometimes string like "A3066" in raw only; if so, this won't be hit
+      if (n >= 20 && n <= 35) return n;
+      if (n >= 2000 && n <= 3500) return n / 100;
+      if (n >= 800 && n <= 1100) return n * 0.029529983;
       return null;
     }
 
@@ -467,8 +460,7 @@
       if (!Number.isFinite(fieldElevFt) || !Number.isFinite(altimInHg) || !Number.isFinite(tempC)) return null;
       const pa = fieldElevFt + (29.92 - altimInHg) * 1000;
       const isa = 15 - 2 * (pa / 1000);
-      const da = pa + 120 * (tempC - isa);
-      return da;
+      return pa + 120 * (tempC - isa);
     }
 
     function fmtFeet(ft){
@@ -537,12 +529,6 @@
       return d.toLocaleString([], { month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit" });
     }
 
-    // ====== AGE UPDATER (without refetch) ======
-    function refreshAgeOnly(){
-      const mins = computeAgeMinutesFromMs(lastObsMs);
-      $("ageBadge").textContent = (mins == null) ? "—" : `${mins}m ago`;
-    }
-
     // ====== LOADERS ======
     async function loadMetar(){
       const metarraw = $("metarraw");
@@ -560,17 +546,14 @@
         $("catText").textContent = cat;
         $("catText").className = catClass(cat);
         $("catDot").style.background = catColorVar(cat);
-
         metarraw.classList.add(catClass(cat));
 
-        // time parsing
         const obs = m.obsTime || m.reportTime || m.time;
         lastObsMs = parseTimeToMs(obs);
 
         $("obstime").textContent = formatObsLineFromMs(lastObsMs);
         refreshAgeOnly();
 
-        // Explanation table values
         $("m_time").textContent = formatLocalTimeWithTZFromMs(lastObsMs);
 
         const windTxt = (m.wdir != null && m.wspd != null)
@@ -578,13 +561,12 @@
           : "—";
         $("m_wind").textContent = windTxt;
 
-        // Visibility display: preserve "+" if present
+        // Vis display: show 10+ if P6SM-ish
         let visTxt = "—";
         if (m.visib != null){
-          if (typeof m.visib === "string") visTxt = m.visib.includes("+") ? `${m.visib.replace("6+","10+")} sm` : `${m.visib} sm`;
-          else visTxt = `${m.visib} sm`;
-          // If API uses 6+ to mean P6SM, show it as 10+ like apps usually do
-          if (/^6\+/.test(String(m.visib))) visTxt = "10+ sm";
+          const s = String(m.visib);
+          if (/^6\+/.test(s) || s === "6+") visTxt = "10+ sm";
+          else visTxt = `${s} sm`;
         }
         $("m_vis").textContent = visTxt;
 
@@ -634,7 +616,7 @@
         if (!t) throw new Error("No TAF returned");
 
         tafmeta.textContent =
-          `Issued: ${safe(t.issueTime)} • Bulletin: ${safe(t.bulletinTime)} • Valid: ${fmtUnixLocal(t.validTimeFrom)}–${fmtUnixLocal(t.validTimeTo)}`;
+          `Issued: ${safe(t.issueTime)} • Valid: ${fmtUnixLocal(t.validTimeFrom)}–${fmtUnixLocal(t.validTimeTo)}`;
 
         const raw = t.rawTAF || t.rawOb || t.raw || t.text || "";
         const lines = tafRawToLines(raw);
@@ -667,27 +649,15 @@
     }
 
     function init(){
-      window.addEventListener("error", (ev) => {
-        const metarraw = $("metarraw");
-        if (metarraw && String(metarraw.textContent||"").startsWith("Loading")){
-          metarraw.textContent = `SCRIPT ERROR: ${ev.message}`;
-          metarraw.className = "metarRaw mono error";
-        }
-      });
-
       setClock();
       $("windy").src = WINDY_URL;
 
       loadMetar();
       loadTaf();
 
-      // UI clock
       setInterval(setClock, 10_000);
-
-      // Update "Xm ago" smoothly without refetch
       setInterval(refreshAgeOnly, 30_000);
 
-      // Data refresh cadence
       setInterval(loadMetar, 60_000);
       setInterval(loadTaf,  5 * 60_000);
     }
