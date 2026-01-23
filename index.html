@@ -192,4 +192,194 @@
         const n = Number(s);
         return Number.isFinite(n) ? n : null;
       }
-      return Number.isFinite(vis) ? vis
+      return Number.isFinite(vis) ? vis : null;
+    }
+
+    function flightCategoryFrom(visSM, ceilFT) {
+      // Common thresholds:
+      // LIFR:  <1 SM OR <500 ft
+      // IFR:   1-<3 SM OR 500-<1000 ft
+      // MVFR:  3-5 SM OR 1000-<3000 ft
+      // VFR:   >5 SM AND >=3000 ft
+      //
+      // If one is missing, classify from the other when possible.
+      const vis = (visSM == null) ? null : visSM;
+      const ceil = (ceilFT == null) ? null : ceilFT;
+
+      const visCat = (v) => {
+        if (v == null) return null;
+        if (v < 1) return "LIFR";
+        if (v < 3) return "IFR";
+        if (v <= 5) return "MVFR";
+        return "VFR";
+      };
+
+      const ceilCat = (c) => {
+        if (c == null) return null;
+        if (c < 500) return "LIFR";
+        if (c < 1000) return "IFR";
+        if (c < 3000) return "MVFR";
+        return "VFR";
+      };
+
+      const a = visCat(vis);
+      const b = ceilCat(ceil);
+
+      if (a && b) {
+        // return the worse of the two
+        const rank = { "LIFR":0, "IFR":1, "MVFR":2, "VFR":3 };
+        return (rank[a] < rank[b]) ? a : b;
+      }
+      return a || b || "UNKNOWN";
+    }
+
+    function catToClass(cat) {
+      switch ((cat || "").toUpperCase()) {
+        case "VFR": return "cat-vfr";
+        case "MVFR": return "cat-mvfr";
+        case "IFR": return "cat-ifr";
+        case "LIFR": return "cat-lifr";
+        default: return "cat-unknown";
+      }
+    }
+
+    async function fetchJSON(path) {
+      const url = `${PROXY_BASE}${path}`;
+      const res = await fetch(url, { cache: "no-store" });
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+      return res.json();
+    }
+
+    // ====== LOADERS ======
+    async function loadMetar() {
+      const metarraw = $("metarraw");
+      metarraw.className = "mono cat-unknown";
+      try {
+        const arr = await fetchJSON(`/metar?ids=${encodeURIComponent(STATION)}`);
+        const m = (Array.isArray(arr) && arr.length) ? arr[0] : null;
+        if (!m) throw new Error("No METAR returned");
+
+        // Raw string (field varies)
+        const raw = safe(m.rawOb || m.raw || m.text, JSON.stringify(m, null, 2));
+        metarraw.textContent = raw;
+
+        // Decoded highlights
+        $("fltcat").textContent = safe(m.fltCat);
+        $("wind").textContent = safe(
+          (m.wdir !== undefined && m.wspd !== undefined)
+            ? `${m.wdir}° @ ${m.wspd} kt${m.wgst ? " G" + m.wgst : ""}`
+            : "—"
+        );
+        $("vis").textContent = safe(m.visib !== undefined ? `${m.visib} sm` : "—");
+        $("cig").textContent = formatCeilingLabel(m.clouds);
+        $("tempdew").textContent = (m.temp !== undefined && m.dewp !== undefined)
+          ? `${m.temp}°C / ${m.dewp}°C`
+          : "—";
+        $("altim").textContent = safe(m.altim !== undefined ? `A${m.altim}` : "—");
+
+        const obs = m.obsTime || m.reportTime || m.time;
+        $("obstime").textContent = safe(obs);
+        $("age").textContent = computeAgeMinutes(obs);
+
+        // Color METAR raw by category reported by the API
+        const metCat = (m.fltCat || "UNKNOWN");
+        metarraw.classList.add(catToClass(metCat));
+
+      } catch (e) {
+        metarraw.textContent = `ERROR loading METAR: ${e.message}`;
+        metarraw.className = "mono error";
+      }
+    }
+
+    function renderTafLines(t) {
+      const holder = $("tafLines");
+      holder.innerHTML = "";
+
+      // Header: show raw TAF headline (optional)
+      const rawTAF = t.rawTAF || t.rawOb || t.raw || t.text || "";
+      $("tafrawheader").textContent = rawTAF ? "Raw TAF loaded (line colors below computed per group)." : "";
+
+      if (!Array.isArray(t.fcsts) || !t.fcsts.length) {
+        const d = document.createElement("div");
+        d.className = "tafLine cat-unknown";
+        d.innerHTML = `<div class="meta">No forecast groups returned</div><div class="txt mono">—</div>`;
+        holder.appendChild(d);
+        return;
+      }
+
+      // Build a colored line for each forecast group
+      t.fcsts.forEach((f, idx) => {
+        const chg = f.fcstChange ? f.fcstChange : (idx === 0 ? "BASE" : "CONT");
+        const visN = visToNumber(f.visib);
+        const ceil = parseCeilingFromClouds(f.clouds);
+
+        const cat = flightCategoryFrom(visN, ceil);
+        const cls = catToClass(cat);
+
+        const wind = (f.wdir != null && f.wspd != null)
+          ? `${String(f.wdir).padStart(3,"0")}${String(f.wspd).padStart(2,"0")}${f.wgst ? "G"+String(f.wgst).padStart(2,"0") : ""}KT`
+          : "";
+
+        const vis = (f.visib != null) ? `P${f.visib}SM`.replace("PP", "P") : ""; // light cleanup
+        const wx = f.wxString ? f.wxString : "";
+
+        // TAF-style ceiling token (OVC011)
+        let cigTok = "";
+        if (Array.isArray(f.clouds) && f.clouds.length) {
+          const c = f.clouds.find(x => ["BKN","OVC","VV"].includes((x.cover || "").toUpperCase()) && Number.isFinite(x.base));
+          if (c) cigTok = `${c.cover}${Math.round(c.base/100).toString().padStart(3,"0")}`;
+        }
+
+        const timeWin = `${fmtUnixLocal(f.timeFrom)}–${fmtUnixLocal(f.timeTo)}`;
+        const lineTxt = [chg, timeWin, wind, (f.visib != null ? `${f.visib}SM` : ""), wx, cigTok].filter(Boolean).join(" ");
+
+        const card = document.createElement("div");
+        card.className = `tafLine ${cls}`;
+        card.innerHTML = `
+          <div class="meta">${cat} • ${chg}</div>
+          <div class="txt mono">${lineTxt}</div>
+        `;
+        holder.appendChild(card);
+      });
+    }
+
+    async function loadTaf() {
+      const tafmeta = $("tafmeta");
+      const holder = $("tafLines");
+      holder.innerHTML = "";
+
+      try {
+        const arr = await fetchJSON(`/taf?ids=${encodeURIComponent(STATION)}`);
+        const t = (Array.isArray(arr) && arr.length) ? arr[0] : null;
+        if (!t) throw new Error("No TAF returned");
+
+        tafmeta.textContent =
+          `Issued: ${safe(t.issueTime)} • Bulletin: ${safe(t.bulletinTime)} • Valid: ${fmtUnixLocal(t.validTimeFrom)}–${fmtUnixLocal(t.validTimeTo)}`;
+
+        renderTafLines(t);
+
+      } catch (e) {
+        tafmeta.textContent = "";
+        const d = document.createElement("div");
+        d.className = "tafLine";
+        d.innerHTML = `<div class="meta error">ERROR loading TAF</div><div class="txt mono error">${e.message}</div>`;
+        holder.appendChild(d);
+      }
+    }
+
+    function init() {
+      setClock();
+      $("windy").src = WINDY_URL;
+
+      loadMetar();
+      loadTaf();
+
+      setInterval(setClock, 1000 * 10);
+      setInterval(loadMetar, 1000 * 60);       // METAR ~1 min
+      setInterval(loadTaf,  1000 * 5 * 60);    // TAF ~5 min
+    }
+
+    init();
+  </script>
+</body>
+</html>
