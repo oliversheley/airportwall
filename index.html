@@ -15,7 +15,7 @@
 
       --vfr:#2bdc4f;
       --mvfr:#4aa3ff;
-      --ifr:#ff4d4d;
+      --ifr:#ff4d4d;      /* used as “RED” */
       --lifr:#c84dff;
       --unk:#d7e3f3;
 
@@ -115,6 +115,12 @@
     .cat-lifr{ color:var(--lifr); }
     .cat-unk{ color:var(--unk); }
     .error{ color:#ff6b6b; font-weight:800; }
+
+    /* NEW: hazard highlight (RED) */
+    .haz-red{
+      color: var(--ifr);
+      font-weight: 1000;
+    }
 
     /* ===== METAR ===== */
     .metarTop{
@@ -337,6 +343,7 @@
 
     // ====== HELPERS ======
     const $ = (id) => document.getElementById(id);
+
     function setClock(){ $("clock").textContent = new Date().toLocaleString(); }
     function safe(v, fallback="—"){ return (v === undefined || v === null || v === "") ? fallback : v; }
 
@@ -434,6 +441,122 @@
       return res.json();
     }
 
+    /* ====== NEW: METAR hazard highlighting ====== */
+    function escapeHTML(s){
+      return String(s)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+    }
+    function escapeRegExp(s){
+      return String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    }
+
+    function visTokenFromRaw(raw){
+      // matches tokens like: M1/4SM, 1/4SM, 1/8SM, 0SM, 1 1/4SM, P6SM, 2SM
+      const m = String(raw || "").match(/\b(M?\d+\s+\d\/\d|M?\d+\/\d+|M?\d+(?:\.\d+)?|P6)\s?SM\b/);
+      return m ? m[0] : null;
+    }
+
+    function parseVisTokenToNumber(token){
+      if (!token) return null;
+      let t = token.toUpperCase().replace("SM", "").trim();
+
+      // Handle P6 (greater than 6) - not relevant to <=0.25, but parse anyway
+      if (t === "P6") return 10;
+
+      // Remove spaces (e.g., "1 1/4" -> "11/4" is bad), so parse before removing spaces
+      let lessThan = false;
+      if (t.startsWith("M")){
+        lessThan = true;
+        t = t.slice(1);
+      }
+
+      // Examples: "1 1/4", "1/4", "0.25", "2"
+      const parts = t.split(/\s+/).filter(Boolean);
+
+      function fracToFloat(f){
+        const [a,b] = f.split("/").map(Number);
+        if (!Number.isFinite(a) || !Number.isFinite(b) || b === 0) return null;
+        return a / b;
+      }
+
+      let val = null;
+      if (parts.length === 2 && parts[1].includes("/")){
+        const whole = Number(parts[0]);
+        const frac = fracToFloat(parts[1]);
+        if (Number.isFinite(whole) && frac != null) val = whole + frac;
+      } else if (parts.length === 1 && parts[0].includes("/")){
+        val = fracToFloat(parts[0]);
+      } else if (parts.length === 1){
+        const n = Number(parts[0]);
+        if (Number.isFinite(n)) val = n;
+      }
+
+      if (!Number.isFinite(val)) return null;
+      // For "M1/4SM" (less than 1/4), treat as slightly below 0.25
+      if (lessThan) val = Math.max(0, val - 0.01);
+      return val;
+    }
+
+    function parseVisGeneric(visib){
+      if (visib == null) return null;
+      if (typeof visib === "number" && Number.isFinite(visib)) return visib;
+
+      const s = String(visib).trim().toUpperCase();
+      if (!s) return null;
+      if (s === "6+" || s === "6+" || s === "6+") return 10;
+      if (s === "P6" || s === "P6SM") return 10;
+
+      // Accept "1/4", "1 1/4", "0.25", etc.
+      // If it already contains SM, let token parser handle it:
+      if (s.includes("SM")) return parseVisTokenToNumber(s);
+
+      // Otherwise treat as a token without SM
+      return parseVisTokenToNumber(s + "SM");
+    }
+
+    function detectMetarHazards(raw, visib){
+      const r = String(raw || "").toUpperCase();
+      const hasFzra = r.includes("FZRA");
+      const hasFzfg = r.includes("FZFG");
+
+      const vFromField = parseVisGeneric(visib);
+      const token = visTokenFromRaw(raw);
+      const vFromRaw = parseVisTokenToNumber(token);
+
+      const vis = (vFromField != null) ? vFromField : vFromRaw;
+      const visLow = (vis != null && vis <= 0.25);
+
+      return { hasFzra, hasFzfg, visLow, visToken: token };
+    }
+
+    function formatMetarRawHTML(raw, hazards){
+      // escape first, then highlight within the safe string
+      let s = escapeHTML(raw);
+
+      // highlight freezing rain/fog tokens
+      s = s.replace(/FZRA/g, '<span class="haz-red">FZRA</span>');
+      s = s.replace(/FZFG/g, '<span class="haz-red">FZFG</span>');
+
+      // highlight the visibility token if it’s <= 0.25 and we can find the exact token
+      if (hazards.visLow && hazards.visToken){
+        const escTok = escapeHTML(hazards.visToken);
+        const re = new RegExp("\\b" + escapeRegExp(escTok) + "\\b", "g");
+        s = s.replace(re, `<span class="haz-red">${escTok}</span>`);
+      }
+      return s;
+    }
+
+    function setKv(id, text, hazardRed=false){
+      const el = $(id);
+      el.textContent = text;
+      el.className = "kvValue" + (hazardRed ? " haz-red" : "");
+    }
+
+    /* ====== TAF helpers (unchanged) ====== */
     function tafRawToLines(rawTAF){
       const s = String(rawTAF || "").trim();
       if (!s) return [];
@@ -498,7 +621,6 @@
     // ====== LOADERS ======
     async function loadMetar(){
       const metarraw = $("metarraw");
-      metarraw.className = "metarRaw mono cat-unk";
 
       try{
         const arr = await fetchJSON(`/metar?ids=${encodeURIComponent(STATION)}`);
@@ -506,47 +628,59 @@
         if (!m) throw new Error("No METAR returned");
 
         const raw = safe(m.rawOb || m.raw || m.text, JSON.stringify(m, null, 2));
-        metarraw.textContent = raw;
-
         const cat = String(m.fltCat || "UNK").toUpperCase();
+
+        // category header
         $("catText").textContent = cat;
         $("catText").className = catClass(cat);
         $("catDot").style.background = catColorVar(cat);
-        metarraw.classList.add(catClass(cat));
 
+        // time/age
         const obs = m.obsTime || m.reportTime || m.time;
         lastObsMs = parseTimeToMs(obs);
-
         $("obstime").textContent = formatObsLineFromMs(lastObsMs);
         refreshAgeOnly();
 
-        $("m_time").textContent = formatLocalTimeWithTZFromMs(lastObsMs);
+        // hazards
+        const hazards = detectMetarHazards(raw, m.visib);
+
+        // raw line with hazard highlighting
+        metarraw.className = "metarRaw mono " + catClass(cat);
+        metarraw.innerHTML = formatMetarRawHTML(raw, hazards);
+
+        // fields
+        setKv("m_time", formatLocalTimeWithTZFromMs(lastObsMs));
 
         const windTxt = (m.wdir != null && m.wspd != null)
           ? `${String(m.wdir).padStart(3,"0")}° at ${m.wspd}${m.wgst ? " - " + m.wgst : ""} kts`
           : "—";
-        $("m_wind").textContent = windTxt;
+        setKv("m_wind", windTxt);
 
+        // visibility display + hazard red if <= 0.25
         let visTxt = "—";
         if (m.visib != null){
           const s = String(m.visib);
           if (/^6\+/.test(s) || s === "6+") visTxt = "10+ sm";
           else visTxt = `${s} sm`;
+        } else {
+          // if API didn't provide, try raw token (still show something)
+          const tok = hazards.visToken;
+          if (tok) visTxt = tok.replace(/\s+/g, " ");
         }
-        $("m_vis").textContent = visTxt;
+        setKv("m_vis", visTxt, hazards.visLow);
 
-        $("m_clouds").textContent = cloudPhrase(m.clouds);
+        setKv("m_clouds", cloudPhrase(m.clouds));
 
         const tC = Number.isFinite(m.temp) ? m.temp : null;
         const dC = Number.isFinite(m.dewp) ? m.dewp : null;
         const tF = (tC == null) ? null : cToF(tC);
         const dF = (dC == null) ? null : cToF(dC);
 
-        $("m_temp").textContent = (tC == null || tF == null) ? "—" : `${tC.toFixed(1)}°C (${Math.round(tF)}°F)`;
-        $("m_dew").textContent  = (dC == null || dF == null) ? "—" : `${dC.toFixed(1)}°C (${Math.round(dF)}°F)`;
+        setKv("m_temp", (tC == null || tF == null) ? "—" : `${tC.toFixed(1)}°C (${Math.round(tF)}°F)`);
+        setKv("m_dew",  (dC == null || dF == null) ? "—" : `${dC.toFixed(1)}°C (${Math.round(dF)}°F)`);
 
         const altInHg = parseAltimeterInHg(m.altim);
-        $("m_alt").textContent = (altInHg == null) ? "—" : `${altInHg.toFixed(2)} inHg`;
+        setKv("m_alt", (altInHg == null) ? "—" : `${altInHg.toFixed(2)} inHg`);
 
       } catch(e){
         $("catText").textContent = "—";
@@ -615,10 +749,7 @@
       loadTaf();
 
       setInterval(setClock, 10_000);
-      setInterval(() => {
-        const mins = (lastObsMs == null) ? null : Math.round((Date.now() - lastObsMs) / 60000);
-        $("ageBadge").textContent = (mins == null || mins < 0 || mins > 10080) ? "—" : `${mins}m ago`;
-      }, 30_000);
+      setInterval(refreshAgeOnly, 30_000);
 
       setInterval(loadMetar, 60_000);
       setInterval(loadTaf,  5 * 60_000);
