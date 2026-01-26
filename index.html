@@ -116,7 +116,7 @@
     .cat-unk{ color:#d7e3f3; }
     .error{ color:#ff6b6b; font-weight:800; }
 
-    /* NEW: hazard highlight (RED) */
+    /* hazard highlight (RED) */
     .haz-red{
       color: var(--ifr);
       font-weight: 1000;
@@ -233,7 +233,7 @@
     }
     .tafLine{ display:block; }
 
-    /* ===== TAF timeline bar ===== */
+    /* ===== TAF timeline bar (8 x 3-hour blocks) ===== */
     .tafBarWrap{
       flex:0 0 auto;
       margin-top:10px;
@@ -252,44 +252,26 @@
     }
     .tafBar{
       position:relative;
-      height:12px;
-      border-radius:999px;
+      height:14px;
+      border-radius:10px;
       overflow:hidden;
       border:1px solid rgba(255,255,255,0.10);
       background:rgba(255,255,255,0.04);
       display:flex;
+      gap:6px;                 /* separation between 3-hr blocks */
+      padding:2px;             /* inset */
     }
     .tafSeg{
       height:100%;
-      flex:1 1 auto;
-      border-right:1px solid rgba(0,0,0,0.35);
-      min-width:2px;
+      border-radius:8px;
+      min-width:0;
     }
-    .tafSeg:last-child{ border-right:none; }
 
     .seg-vfr{ background:var(--vfr); }
     .seg-mvfr{ background:var(--mvfr); }
     .seg-ifr{ background:var(--ifr); }
     .seg-lifr{ background:var(--lifr); }
     .seg-unk{ background:var(--unk); }
-
-    /* subtle hour ticks (every 6 hours) */
-    .tafBar::after{
-      content:"";
-      position:absolute;
-      inset:0;
-      pointer-events:none;
-      background:
-        linear-gradient(to right,
-          transparent 0,
-          transparent calc(100%/4 - 1px),
-          rgba(0,0,0,0.35) calc(100%/4 - 1px),
-          rgba(0,0,0,0.35) calc(100%/4)
-        );
-      background-size: calc(100%/4) 100%;
-      opacity:0.55;
-      mix-blend-mode: multiply;
-    }
   </style>
 </head>
 
@@ -363,9 +345,8 @@
 
           <div id="tafBlock" class="tafBlock mono cat-unk">Loading…</div>
 
-          <!-- NEW: 24h category timeline bar -->
           <div class="tafBarWrap">
-            <div class="tafBarLabel" id="tafBarLabel">Next 24h: —</div>
+            <div class="tafBarLabel" id="tafBarLabel">Next 24h:</div>
             <div class="tafBar" id="tafBar" aria-label="TAF 24 hour flight category bar"></div>
           </div>
         </div>
@@ -521,7 +502,6 @@
     }
 
     function visTokenFromRaw(raw){
-      // tokens: M1/4SM, 1/4SM, 1/8SM, 0SM, 1 1/4SM, P6SM, 2SM, etc
       const m = String(raw || "").match(/\b(M?\d+\s+\d\/\d|M?\d+\/\d+|M?\d+(?:\.\d+)?|P6)\s?SM\b/);
       return m ? m[0] : null;
     }
@@ -559,7 +539,7 @@
       }
 
       if (!Number.isFinite(val)) return null;
-      if (lessThan) val = Math.max(0, val - 0.01); // M1/4 => slightly below 0.25
+      if (lessThan) val = Math.max(0, val - 0.01);
       return val;
     }
 
@@ -569,8 +549,7 @@
 
       const s = String(visib).trim().toUpperCase();
       if (!s) return null;
-      if (s === "6+" || s === "6+") return 10;
-      if (s === "P6" || s === "P6SM") return 10;
+      if (s === "6+" || s === "P6" || s === "P6SM") return 10;
       if (s.includes("SM")) return parseVisTokenToNumber(s);
       return parseVisTokenToNumber(s + "SM");
     }
@@ -592,12 +571,9 @@
 
     function formatMetarRawHTML(raw, hazards){
       let s = escapeHTML(raw);
-
-      // highlight freezing rain/fog tokens
       s = s.replace(/FZRA/g, '<span class="haz-red">FZRA</span>');
       s = s.replace(/FZFG/g, '<span class="haz-red">FZFG</span>');
 
-      // highlight the visibility token if it’s <= 0.25 and we can find the exact token
       if (hazards.visLow && hazards.visToken){
         const escTok = escapeHTML(hazards.visToken);
         const re = new RegExp("\\b" + escapeRegExp(escTok) + "\\b", "g");
@@ -674,7 +650,7 @@
       return d.toLocaleString([], { month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit" });
     }
 
-    /* ===== NEW: Build 24h bar from fcsts (worst-of-overlap, includes TEMPO) ===== */
+    /* ===== 24h bar in 3-hour blocks ===== */
     function catRank(cat){
       const c = String(cat || "UNK").toUpperCase();
       const rank = { "LIFR":0, "IFR":1, "MVFR":2, "VFR":3, "UNK":4 };
@@ -700,41 +676,7 @@
       }
     }
 
-    function buildTafTimelineSegments(fcsts, startSec, endSec, stepSec){
-      // sample timeline and collapse into contiguous segments
-      const samples = [];
-      for (let t = startSec; t < endSec; t += stepSec){
-        const applicable = (fcsts || []).filter(f => Number.isFinite(f.timeFrom) && Number.isFinite(f.timeTo) && f.timeFrom <= t && t < f.timeTo);
-        const cats = applicable.map(f => {
-          const v = visToNumber(f.visib);
-          const ceil = ceilingFeetFromClouds(f.clouds);
-          return flightCategoryFrom(v, ceil);
-        });
-        samples.push({ t, cat: worstCat(cats) });
-      }
-
-      if (!samples.length) return [{ cat:"UNK", from:startSec, to:endSec }];
-
-      const segs = [];
-      let cur = { cat: samples[0].cat, from: startSec, to: Math.min(endSec, startSec + stepSec) };
-
-      for (let i = 1; i < samples.length; i++){
-        const nextFrom = startSec + i * stepSec;
-        const nextTo = Math.min(endSec, nextFrom + stepSec);
-        const c = samples[i].cat;
-
-        if (c === cur.cat){
-          cur.to = nextTo;
-        } else {
-          segs.push(cur);
-          cur = { cat: c, from: nextFrom, to: nextTo };
-        }
-      }
-      segs.push(cur);
-      return segs;
-    }
-
-    function renderTafBar(fcsts, tafValidFrom, tafValidTo){
+    function renderTafBar(fcsts){
       const bar = $("tafBar");
       const label = $("tafBarLabel");
       bar.innerHTML = "";
@@ -742,28 +684,42 @@
       const nowSec = Math.floor(Date.now()/1000);
       const windowStart = nowSec;
       const windowEnd = nowSec + 24*3600;
-      const stepSec = 15*60; // 15-minute resolution
 
-      const segs = buildTafTimelineSegments(fcsts || [], windowStart, windowEnd, stepSec);
+      // exactly as requested
+      label.textContent = "Next 24h:";
 
-      // Label
-      const startTxt = new Date(windowStart*1000).toLocaleTimeString([], { hour:"2-digit", minute:"2-digit" });
-      const endTxt = new Date(windowEnd*1000).toLocaleTimeString([], { hour:"2-digit", minute:"2-digit" });
-      label.textContent = `Next 24h: ${startTxt} → ${endTxt}`;
+      const blockSec = 3 * 3600;   // 3-hour blocks
+      const stepSec  = 15 * 60;    // 15-minute sampling inside each block
 
-      // Render segments with proportional widths
-      const total = (windowEnd - windowStart);
-      for (const s of segs){
-        const dur = Math.max(0, s.to - s.from);
-        if (dur <= 0) continue;
+      for (let bStart = windowStart; bStart < windowEnd; bStart += blockSec){
+        const bEnd = Math.min(windowEnd, bStart + blockSec);
 
-        const div = document.createElement("div");
-        div.className = `tafSeg ${segClass(s.cat)}`;
-        div.style.flex = String(dur); // proportional
-        const a = new Date(s.from*1000).toLocaleTimeString([], { hour:"2-digit", minute:"2-digit" });
-        const b = new Date(s.to*1000).toLocaleTimeString([], { hour:"2-digit", minute:"2-digit" });
-        div.title = `${s.cat}  ${a}–${b}`;
-        bar.appendChild(div);
+        let worst = "UNK";
+        for (let t = bStart; t < bEnd; t += stepSec){
+          const applicable = (fcsts || []).filter(f =>
+            Number.isFinite(f.timeFrom) && Number.isFinite(f.timeTo) &&
+            f.timeFrom <= t && t < f.timeTo
+          );
+
+          const cats = applicable.map(f => {
+            const v = visToNumber(f.visib);
+            const ceil = ceilingFeetFromClouds(f.clouds);
+            return flightCategoryFrom(v, ceil);
+          });
+
+          const c = worstCat(cats);
+          if (catRank(c) < catRank(worst)) worst = c;
+        }
+
+        const seg = document.createElement("div");
+        seg.className = `tafSeg ${segClass(worst)}`;
+        seg.style.flex = "1 1 0";
+
+        const a = new Date(bStart*1000).toLocaleTimeString([], { hour:"2-digit", minute:"2-digit" });
+        const z = new Date(bEnd*1000).toLocaleTimeString([], { hour:"2-digit", minute:"2-digit" });
+        seg.title = `${worst}  ${a}–${z}`;
+
+        bar.appendChild(seg);
       }
     }
 
@@ -874,14 +830,14 @@
           });
         }
 
-        // NEW: render 24h category bar from fcsts
-        renderTafBar(fcsts, t.validTimeFrom, t.validTimeTo);
+        // render 3-hour block bar
+        renderTafBar(fcsts);
 
       } catch(e){
         tafmeta.textContent = "";
         tafBlock.textContent = `ERROR loading TAF: ${e.message}`;
         tafBlock.className = "tafBlock mono error";
-        $("tafBarLabel").textContent = "Next 24h: —";
+        $("tafBarLabel").textContent = "Next 24h:";
         $("tafBar").innerHTML = "";
       }
     }
@@ -898,14 +854,6 @@
 
       setInterval(loadMetar, 60_000);
       setInterval(loadTaf,  5 * 60_000);
-
-      // keep the bar label current even between TAF refreshes
-      setInterval(() => {
-        // Re-render bar using latest already-rendered segments isn’t stored,
-        // so just update label if it exists; full re-render happens on TAF refresh.
-        const now = new Date();
-        $("clock").textContent = now.toLocaleString();
-      }, 30_000);
     }
 
     init();
