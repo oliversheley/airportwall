@@ -15,9 +15,9 @@
 
       --vfr:#2bdc4f;
       --mvfr:#4aa3ff;
-      --ifr:#ff4d4d;      /* used as “RED” */
-      --lifr:#c84dff;
-      --unk:#d7e3f3;
+      --ifr:#ff4d4d;     /* RED */
+      --lifr:#c84dff;    /* MAGENTA */
+      --unk:#6f7d8f;
 
       --age:#ff9a3d;
       --divider:rgba(255,255,255,0.08);
@@ -113,7 +113,7 @@
     .cat-mvfr{ color:var(--mvfr); }
     .cat-ifr{ color:var(--ifr); }
     .cat-lifr{ color:var(--lifr); }
-    .cat-unk{ color:var(--unk); }
+    .cat-unk{ color:#d7e3f3; }
     .error{ color:#ff6b6b; font-weight:800; }
 
     /* NEW: hazard highlight (RED) */
@@ -218,6 +218,7 @@
 
     /* ===== TAF ===== */
     .tafHeader{ flex:0 0 auto; }
+
     .tafBlock{
       flex:1 1 auto;
       min-height:0;
@@ -231,6 +232,64 @@
       mask-image: linear-gradient(to bottom, #000 88%, transparent);
     }
     .tafLine{ display:block; }
+
+    /* ===== TAF timeline bar ===== */
+    .tafBarWrap{
+      flex:0 0 auto;
+      margin-top:10px;
+    }
+    .tafBarLabel{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:10px;
+      font-size:12px;
+      color:var(--muted);
+      margin-bottom:6px;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+    .tafBar{
+      position:relative;
+      height:12px;
+      border-radius:999px;
+      overflow:hidden;
+      border:1px solid rgba(255,255,255,0.10);
+      background:rgba(255,255,255,0.04);
+      display:flex;
+    }
+    .tafSeg{
+      height:100%;
+      flex:1 1 auto;
+      border-right:1px solid rgba(0,0,0,0.35);
+      min-width:2px;
+    }
+    .tafSeg:last-child{ border-right:none; }
+
+    .seg-vfr{ background:var(--vfr); }
+    .seg-mvfr{ background:var(--mvfr); }
+    .seg-ifr{ background:var(--ifr); }
+    .seg-lifr{ background:var(--lifr); }
+    .seg-unk{ background:var(--unk); }
+
+    /* subtle hour ticks (every 6 hours) */
+    .tafBar::after{
+      content:"";
+      position:absolute;
+      inset:0;
+      pointer-events:none;
+      background:
+        linear-gradient(to right,
+          transparent 0,
+          transparent calc(100%/4 - 1px),
+          rgba(0,0,0,0.35) calc(100%/4 - 1px),
+          rgba(0,0,0,0.35) calc(100%/4)
+        );
+      background-size: calc(100%/4) 100%;
+      opacity:0.55;
+      mix-blend-mode: multiply;
+    }
   </style>
 </head>
 
@@ -301,7 +360,14 @@
             <h2>TAF (Raw with Line Breaks + Colors)</h2>
             <div class="small" id="tafmeta">Loading…</div>
           </div>
+
           <div id="tafBlock" class="tafBlock mono cat-unk">Loading…</div>
+
+          <!-- NEW: 24h category timeline bar -->
+          <div class="tafBarWrap">
+            <div class="tafBarLabel" id="tafBarLabel">Next 24h: —</div>
+            <div class="tafBar" id="tafBar" aria-label="TAF 24 hour flight category bar"></div>
+          </div>
         </div>
       </div>
 
@@ -441,7 +507,7 @@
       return res.json();
     }
 
-    /* ====== NEW: METAR hazard highlighting ====== */
+    /* ====== METAR hazard highlighting ====== */
     function escapeHTML(s){
       return String(s)
         .replaceAll("&", "&amp;")
@@ -455,7 +521,7 @@
     }
 
     function visTokenFromRaw(raw){
-      // matches tokens like: M1/4SM, 1/4SM, 1/8SM, 0SM, 1 1/4SM, P6SM, 2SM
+      // tokens: M1/4SM, 1/4SM, 1/8SM, 0SM, 1 1/4SM, P6SM, 2SM, etc
       const m = String(raw || "").match(/\b(M?\d+\s+\d\/\d|M?\d+\/\d+|M?\d+(?:\.\d+)?|P6)\s?SM\b/);
       return m ? m[0] : null;
     }
@@ -464,17 +530,14 @@
       if (!token) return null;
       let t = token.toUpperCase().replace("SM", "").trim();
 
-      // Handle P6 (greater than 6) - not relevant to <=0.25, but parse anyway
       if (t === "P6") return 10;
 
-      // Remove spaces (e.g., "1 1/4" -> "11/4" is bad), so parse before removing spaces
       let lessThan = false;
       if (t.startsWith("M")){
         lessThan = true;
         t = t.slice(1);
       }
 
-      // Examples: "1 1/4", "1/4", "0.25", "2"
       const parts = t.split(/\s+/).filter(Boolean);
 
       function fracToFloat(f){
@@ -496,8 +559,7 @@
       }
 
       if (!Number.isFinite(val)) return null;
-      // For "M1/4SM" (less than 1/4), treat as slightly below 0.25
-      if (lessThan) val = Math.max(0, val - 0.01);
+      if (lessThan) val = Math.max(0, val - 0.01); // M1/4 => slightly below 0.25
       return val;
     }
 
@@ -507,14 +569,9 @@
 
       const s = String(visib).trim().toUpperCase();
       if (!s) return null;
-      if (s === "6+" || s === "6+" || s === "6+") return 10;
+      if (s === "6+" || s === "6+") return 10;
       if (s === "P6" || s === "P6SM") return 10;
-
-      // Accept "1/4", "1 1/4", "0.25", etc.
-      // If it already contains SM, let token parser handle it:
       if (s.includes("SM")) return parseVisTokenToNumber(s);
-
-      // Otherwise treat as a token without SM
       return parseVisTokenToNumber(s + "SM");
     }
 
@@ -534,7 +591,6 @@
     }
 
     function formatMetarRawHTML(raw, hazards){
-      // escape first, then highlight within the safe string
       let s = escapeHTML(raw);
 
       // highlight freezing rain/fog tokens
@@ -556,7 +612,7 @@
       el.className = "kvValue" + (hazardRed ? " haz-red" : "");
     }
 
-    /* ====== TAF helpers (unchanged) ====== */
+    /* ===== TAF helpers ===== */
     function tafRawToLines(rawTAF){
       const s = String(rawTAF || "").trim();
       if (!s) return [];
@@ -618,6 +674,99 @@
       return d.toLocaleString([], { month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit" });
     }
 
+    /* ===== NEW: Build 24h bar from fcsts (worst-of-overlap, includes TEMPO) ===== */
+    function catRank(cat){
+      const c = String(cat || "UNK").toUpperCase();
+      const rank = { "LIFR":0, "IFR":1, "MVFR":2, "VFR":3, "UNK":4 };
+      return (c in rank) ? rank[c] : 4;
+    }
+    function worstCat(cats){
+      if (!cats.length) return "UNK";
+      let best = "UNK";
+      let r = 999;
+      for (const c of cats){
+        const cr = catRank(c);
+        if (cr < r){ r = cr; best = c; }
+      }
+      return String(best || "UNK").toUpperCase();
+    }
+    function segClass(cat){
+      switch (String(cat || "").toUpperCase()){
+        case "VFR":  return "seg-vfr";
+        case "MVFR": return "seg-mvfr";
+        case "IFR":  return "seg-ifr";
+        case "LIFR": return "seg-lifr";
+        default:     return "seg-unk";
+      }
+    }
+
+    function buildTafTimelineSegments(fcsts, startSec, endSec, stepSec){
+      // sample timeline and collapse into contiguous segments
+      const samples = [];
+      for (let t = startSec; t < endSec; t += stepSec){
+        const applicable = (fcsts || []).filter(f => Number.isFinite(f.timeFrom) && Number.isFinite(f.timeTo) && f.timeFrom <= t && t < f.timeTo);
+        const cats = applicable.map(f => {
+          const v = visToNumber(f.visib);
+          const ceil = ceilingFeetFromClouds(f.clouds);
+          return flightCategoryFrom(v, ceil);
+        });
+        samples.push({ t, cat: worstCat(cats) });
+      }
+
+      if (!samples.length) return [{ cat:"UNK", from:startSec, to:endSec }];
+
+      const segs = [];
+      let cur = { cat: samples[0].cat, from: startSec, to: Math.min(endSec, startSec + stepSec) };
+
+      for (let i = 1; i < samples.length; i++){
+        const nextFrom = startSec + i * stepSec;
+        const nextTo = Math.min(endSec, nextFrom + stepSec);
+        const c = samples[i].cat;
+
+        if (c === cur.cat){
+          cur.to = nextTo;
+        } else {
+          segs.push(cur);
+          cur = { cat: c, from: nextFrom, to: nextTo };
+        }
+      }
+      segs.push(cur);
+      return segs;
+    }
+
+    function renderTafBar(fcsts, tafValidFrom, tafValidTo){
+      const bar = $("tafBar");
+      const label = $("tafBarLabel");
+      bar.innerHTML = "";
+
+      const nowSec = Math.floor(Date.now()/1000);
+      const windowStart = nowSec;
+      const windowEnd = nowSec + 24*3600;
+      const stepSec = 15*60; // 15-minute resolution
+
+      const segs = buildTafTimelineSegments(fcsts || [], windowStart, windowEnd, stepSec);
+
+      // Label
+      const startTxt = new Date(windowStart*1000).toLocaleTimeString([], { hour:"2-digit", minute:"2-digit" });
+      const endTxt = new Date(windowEnd*1000).toLocaleTimeString([], { hour:"2-digit", minute:"2-digit" });
+      label.textContent = `Next 24h: ${startTxt} → ${endTxt}`;
+
+      // Render segments with proportional widths
+      const total = (windowEnd - windowStart);
+      for (const s of segs){
+        const dur = Math.max(0, s.to - s.from);
+        if (dur <= 0) continue;
+
+        const div = document.createElement("div");
+        div.className = `tafSeg ${segClass(s.cat)}`;
+        div.style.flex = String(dur); // proportional
+        const a = new Date(s.from*1000).toLocaleTimeString([], { hour:"2-digit", minute:"2-digit" });
+        const b = new Date(s.to*1000).toLocaleTimeString([], { hour:"2-digit", minute:"2-digit" });
+        div.title = `${s.cat}  ${a}–${b}`;
+        bar.appendChild(div);
+      }
+    }
+
     // ====== LOADERS ======
     async function loadMetar(){
       const metarraw = $("metarraw");
@@ -630,25 +779,20 @@
         const raw = safe(m.rawOb || m.raw || m.text, JSON.stringify(m, null, 2));
         const cat = String(m.fltCat || "UNK").toUpperCase();
 
-        // category header
         $("catText").textContent = cat;
         $("catText").className = catClass(cat);
         $("catDot").style.background = catColorVar(cat);
 
-        // time/age
         const obs = m.obsTime || m.reportTime || m.time;
         lastObsMs = parseTimeToMs(obs);
         $("obstime").textContent = formatObsLineFromMs(lastObsMs);
         refreshAgeOnly();
 
-        // hazards
         const hazards = detectMetarHazards(raw, m.visib);
 
-        // raw line with hazard highlighting
         metarraw.className = "metarRaw mono " + catClass(cat);
         metarraw.innerHTML = formatMetarRawHTML(raw, hazards);
 
-        // fields
         setKv("m_time", formatLocalTimeWithTZFromMs(lastObsMs));
 
         const windTxt = (m.wdir != null && m.wspd != null)
@@ -656,16 +800,13 @@
           : "—";
         setKv("m_wind", windTxt);
 
-        // visibility display + hazard red if <= 0.25
         let visTxt = "—";
         if (m.visib != null){
           const s = String(m.visib);
           if (/^6\+/.test(s) || s === "6+") visTxt = "10+ sm";
           else visTxt = `${s} sm`;
-        } else {
-          // if API didn't provide, try raw token (still show something)
-          const tok = hazards.visToken;
-          if (tok) visTxt = tok.replace(/\s+/g, " ");
+        } else if (hazards.visToken){
+          visTxt = hazards.visToken.replace(/\s+/g, " ");
         }
         setKv("m_vis", visTxt, hazards.visLow);
 
@@ -717,27 +858,31 @@
 
         if (!lines.length){
           tafBlock.textContent = "No TAF text returned.";
-          return;
+        } else {
+          lines.forEach((line, i) => {
+            const f = fcsts[i] || null;
+            const visN = f ? visToNumber(f.visib) : null;
+            const ceil = f ? ceilingFeetFromClouds(f.clouds) : null;
+            const cat = f ? flightCategoryFrom(visN, ceil) : "UNK";
+
+            const span = document.createElement("span");
+            span.className = `tafLine ${catClass(cat)}`;
+            span.textContent = line;
+
+            tafBlock.appendChild(span);
+            tafBlock.appendChild(document.createTextNode("\n"));
+          });
         }
 
-        lines.forEach((line, i) => {
-          const f = fcsts[i] || null;
-          const visN = f ? visToNumber(f.visib) : null;
-          const ceil = f ? ceilingFeetFromClouds(f.clouds) : null;
-          const cat = f ? flightCategoryFrom(visN, ceil) : "UNK";
-
-          const span = document.createElement("span");
-          span.className = `tafLine ${catClass(cat)}`;
-          span.textContent = line;
-
-          tafBlock.appendChild(span);
-          tafBlock.appendChild(document.createTextNode("\n"));
-        });
+        // NEW: render 24h category bar from fcsts
+        renderTafBar(fcsts, t.validTimeFrom, t.validTimeTo);
 
       } catch(e){
         tafmeta.textContent = "";
         tafBlock.textContent = `ERROR loading TAF: ${e.message}`;
         tafBlock.className = "tafBlock mono error";
+        $("tafBarLabel").textContent = "Next 24h: —";
+        $("tafBar").innerHTML = "";
       }
     }
 
@@ -753,6 +898,14 @@
 
       setInterval(loadMetar, 60_000);
       setInterval(loadTaf,  5 * 60_000);
+
+      // keep the bar label current even between TAF refreshes
+      setInterval(() => {
+        // Re-render bar using latest already-rendered segments isn’t stored,
+        // so just update label if it exists; full re-render happens on TAF refresh.
+        const now = new Date();
+        $("clock").textContent = now.toLocaleString();
+      }, 30_000);
     }
 
     init();
