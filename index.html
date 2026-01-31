@@ -71,7 +71,7 @@
     .left{
       min-height:0;
       display:grid;
-      grid-template-rows: 1fr 1fr;   /* METAR top, TAF bottom */
+      grid-template-rows: 1.05fr 0.95fr;
       gap:12px;
     }
 
@@ -114,7 +114,7 @@
     .cat-ifr{ color:var(--ifr); }
     .cat-lifr{ color:var(--lifr); }
     .cat-unk{ color:#d7e3f3; }
-    .error{ color:#ff6b6b; font-weight:800; }
+    .error{ color:#ff6b6b; font-weight:900; }
 
     /* hazard highlight (RED) */
     .haz-red{
@@ -227,11 +227,12 @@
       font-size:clamp(12px, 0.95vw, 14px);
       line-height:1.35;
       overflow:hidden;
+      padding-top:2px;
 
-      -webkit-mask-image: linear-gradient(to bottom, #000 88%, transparent);
-      mask-image: linear-gradient(to bottom, #000 88%, transparent);
+      -webkit-mask-image: linear-gradient(to bottom, #000 90%, transparent);
+      mask-image: linear-gradient(to bottom, #000 90%, transparent);
     }
-    .tafLine{ display:block; }
+    .tafLine{ display:block; padding:2px 0; }
 
     /* ===== TAF timeline bar (8 x 3-hour blocks) ===== */
     .tafBarWrap{
@@ -258,15 +259,16 @@
       border:1px solid rgba(255,255,255,0.10);
       background:rgba(255,255,255,0.04);
       display:flex;
-      gap:6px;                 /* separation between 3-hr blocks */
-      padding:2px;             /* inset */
+      gap:6px;
+      padding:2px;
     }
     .tafSeg{
       height:100%;
       border-radius:8px;
       min-width:0;
+      flex: 1 1 0;
+      opacity:0.95;
     }
-
     .seg-vfr{ background:var(--vfr); }
     .seg-mvfr{ background:var(--mvfr); }
     .seg-ifr{ background:var(--ifr); }
@@ -352,15 +354,15 @@
         </div>
       </div>
 
-      <!-- RIGHT 2/3: WINDY -->
+      <!-- RIGHT 2/3: Windy -->
       <div class="card">
         <h2>Radar / Weather Map (Windy embed)</h2>
-        <iframe id="windyRadar" loading="lazy" referrerpolicy="no-referrer"></iframe>
+        <iframe id="windyRadar" title="Windy Radar"></iframe>
       </div>
     </div>
   </div>
 
-  <script>
+<script>
 "use strict";
 
 /* ====== CONFIG ====== */
@@ -371,7 +373,7 @@ const PROXY_BASE = "https://kfoe-awc-proxy.oliversheley.workers.dev";
 const DETAIL_LAT = 38.95083;
 const DETAIL_LON = -95.66361;
 
-// ✅ Map center point (zoomed-out focus) — change these to whatever you want
+// Map center point (zoomed-out focus)
 const CENTER_LAT = 39.10;
 const CENTER_LON = -95.80;
 
@@ -387,6 +389,15 @@ const $ = (id) => document.getElementById(id);
 function setClock() {
   const el = $("clock");
   if (el) el.textContent = new Date().toLocaleString();
+}
+
+function escapeHTML(s){
+  return String(s ?? "")
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;")
+    .replaceAll("'","&#39;");
 }
 
 function parseTimeToMs(t){
@@ -435,6 +446,12 @@ function formatObsLineFromMs(ms){
   return new Date(ms).toLocaleString([], { month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit", timeZoneName:"short" });
 }
 
+function formatMaybeISOorEpoch(x){
+  const ms = parseTimeToMs(x);
+  if (ms == null) return String(x ?? "—");
+  return new Date(ms).toLocaleString([], { month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit", timeZoneName:"short" });
+}
+
 function safe(v, fallback="—"){
   return (v === undefined || v === null || v === "") ? fallback : v;
 }
@@ -465,7 +482,7 @@ async function fetchJSON(path){
   return res.json();
 }
 
-/* ====== Windy URL (safe builder) ====== */
+/* ====== Windy URL ====== */
 function buildWindyUrl(){
   return "https://embed.windy.com/embed2.html" +
     `?lat=${encodeURIComponent(CENTER_LAT)}` +
@@ -483,7 +500,44 @@ function buildWindyUrl(){
     "&metricWind=default&metricTemp=default&radarRange=-1";
 }
 
-/* ====== Minimal METAR decode (same behavior as before) ====== */
+/* ====== Flight category compute from vis/ceiling ====== */
+function parseVisSm(v){
+  if (v == null) return null;
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  const s = String(v).trim();
+  if (!s) return null;
+  if (s === "6+" || s.startsWith("6+")) return 10;
+  const n = parseFloat(s);
+  return Number.isFinite(n) ? n : null;
+}
+
+function calcCeilingFt(clouds){
+  if (!Array.isArray(clouds) || !clouds.length) return null;
+  const candidates = clouds
+    .map(c => ({
+      cover: String(c.cover||"").toUpperCase(),
+      base: Number.isFinite(c.base) ? c.base : null
+    }))
+    .filter(c => c.base != null && ["BKN","OVC","VV"].includes(c.cover))
+    .sort((a,b)=>a.base-b.base);
+  return candidates.length ? candidates[0].base : null;
+}
+
+function catFromCeilVis(ceilFt, visSm){
+  // If both missing → UNK
+  if (ceilFt == null && visSm == null) return "UNK";
+
+  const c = (ceilFt == null) ? Infinity : ceilFt;
+  const v = (visSm == null) ? Infinity : visSm;
+
+  // Standard thresholds
+  if (c < 500 || v < 1) return "LIFR";
+  if (c < 1000 || v < 3) return "IFR";
+  if (c < 3000 || v <= 5) return "MVFR";
+  return "VFR";
+}
+
+/* ===== METAR helpers ===== */
 function cloudPhrase(clouds){
   if (!Array.isArray(clouds) || !clouds.length) return "Clear";
   const sorted = clouds.filter(c=>Number.isFinite(c.base)).sort((a,b)=>a.base-b.base);
@@ -507,6 +561,23 @@ function parseAltimeterInHg(alt){
   return null;
 }
 
+// Highlight: FZRA / FZDZ / FZFG and VIS <= 1/4SM patterns in the raw METAR
+function highlightMetarRaw(raw, visSmMaybe){
+  let html = escapeHTML(raw);
+
+  // Freeze hazards
+  html = html.replace(/\b(FZRA|FZDZ|FZFG)\b/g, `<span class="haz-red">$1</span>`);
+
+  // Visibility 1/4SM or less common tokens
+  html = html.replace(/\b(M?1\/4SM|1\/8SM|0SM|M1\/8SM|M1\/4SM)\b/g, `<span class="haz-red">$1</span>`);
+
+  // If decoded vis <= 0.25, highlight ANY "SM" token occurrence as extra (optional, safe)
+  if (Number.isFinite(visSmMaybe) && visSmMaybe <= 0.25){
+    html = html.replace(/\b(\d+\s*)?SM\b/g, (m)=>`<span class="haz-red">${m}</span>`);
+  }
+  return html;
+}
+
 async function loadMetar(){
   const metarraw = $("metarraw");
   try{
@@ -526,8 +597,11 @@ async function loadMetar(){
     $("obstime").textContent = formatObsLineFromMs(lastObsMs);
     refreshAgeOnly();
 
+    // decoded visibility for hazard highlight
+    const visSm = parseVisSm(m.visib);
+
     metarraw.className = "metarRaw mono " + catClass(cat);
-    metarraw.textContent = raw;
+    metarraw.innerHTML = highlightMetarRaw(raw, visSm);
 
     $("m_time").textContent = formatLocalTimeWithTZFromMs(lastObsMs);
 
@@ -544,6 +618,13 @@ async function loadMetar(){
     }
     $("m_vis").textContent = visTxt;
 
+    // If vis <= 0.25 → make the VIS value red
+    if (Number.isFinite(visSm) && visSm <= 0.25){
+      $("m_vis").classList.add("haz-red");
+    } else {
+      $("m_vis").classList.remove("haz-red");
+    }
+
     $("m_clouds").textContent = cloudPhrase(m.clouds);
 
     const tC = Number.isFinite(m.temp) ? m.temp : null;
@@ -558,7 +639,6 @@ async function loadMetar(){
     $("m_alt").textContent = (altInHg == null) ? "—" : `${altInHg.toFixed(2)} inHg`;
 
   } catch(e){
-    // Show the error on-screen (so you don't need console access)
     $("catText").textContent = "—";
     $("catText").className = "cat-unk";
     $("catDot").style.background = "var(--unk)";
@@ -573,26 +653,153 @@ async function loadMetar(){
   }
 }
 
+/* ===== TAF rendering with colored lines + 3h segments bar ===== */
+
+function splitTafIntoLines(rawTAF){
+  // Put newlines before FMxxxxxx, TEMPO ddhh/ddhh, BECMG ddhh/ddhh, PROBxx ddhh/ddhh
+  // Keep it raw-ish (minimal formatting) like you requested.
+  const s = String(rawTAF || "").trim();
+  if (!s) return [];
+  const withBreaks = s.replace(/\s+(FM\d{6}|TEMPO\s+\d{4}\/\d{4}|BECMG\s+\d{4}\/\d{4}|PROB\d{2}\s+\d{4}\/\d{4})/g, "\n$1");
+  return withBreaks.split("\n").map(x=>x.trim()).filter(Boolean);
+}
+
+function buildFcstQueues(fcsts){
+  const q = {
+    BASE: [],
+    FM: [],
+    TEMPO: [],
+    BECMG: [],
+    PROB: [],
+    OTHER: []
+  };
+  for (const f of (Array.isArray(fcsts) ? fcsts : [])){
+    const ch = String(f.fcstChange || "").toUpperCase();
+    if (!ch) q.BASE.push(f);
+    else if (ch === "FM") q.FM.push(f);
+    else if (ch === "TEMPO") q.TEMPO.push(f);
+    else if (ch === "BECMG") q.BECMG.push(f);
+    else if (ch.startsWith("PROB")) q.PROB.push(f);
+    else q.OTHER.push(f);
+  }
+  return q;
+}
+
+function fcstCategory(fcst){
+  if (!fcst) return "UNK";
+  const ceil = calcCeilingFt(fcst.clouds);
+  const vis  = parseVisSm(fcst.visib);
+  return catFromCeilVis(ceil, vis);
+}
+
+function findFcstForTime(fcsts, tMs){
+  // fcsts are epoch seconds; find one that covers tMs
+  const tSec = Math.floor(tMs / 1000);
+  for (const f of (Array.isArray(fcsts) ? fcsts : [])){
+    const a = Number(f.timeFrom);
+    const b = Number(f.timeTo);
+    if (Number.isFinite(a) && Number.isFinite(b) && tSec >= a && tSec < b) return f;
+  }
+  return null;
+}
+
+function segClass(cat){
+  switch (String(cat||"").toUpperCase()){
+    case "VFR": return "seg-vfr";
+    case "MVFR": return "seg-mvfr";
+    case "IFR": return "seg-ifr";
+    case "LIFR": return "seg-lifr";
+    default: return "seg-unk";
+  }
+}
+
+function prettyRangeLabel(startMs, endMs){
+  const a = new Date(startMs).toLocaleTimeString([], { hour:"2-digit", minute:"2-digit" });
+  const b = new Date(endMs).toLocaleTimeString([], { hour:"2-digit", minute:"2-digit" });
+  return `${a}–${b}`;
+}
+
 async function loadTaf(){
   const tafmeta = $("tafmeta");
   const tafBlock = $("tafBlock");
+  const tafBar = $("tafBar");
+  const tafBarLabel = $("tafBarLabel");
+
   try{
     const arr = await fetchJSON(`/taf?ids=${encodeURIComponent(STATION)}`);
     const t = (Array.isArray(arr) && arr.length) ? arr[0] : null;
     if (!t) throw new Error("No TAF returned");
 
-    tafmeta.textContent = `Issued: ${safe(t.issueTime)} • Valid: ${safe(t.validTimeFrom)}–${safe(t.validTimeTo)}`;
+    const issue = t.issueTime || t.bulletinTime || t.dbPopTime;
+    const validFrom = (Number.isFinite(Number(t.validTimeFrom)) ? Number(t.validTimeFrom) * 1000 : parseTimeToMs(t.validTimeFrom));
+    const validTo   = (Number.isFinite(Number(t.validTimeTo))   ? Number(t.validTimeTo)   * 1000 : parseTimeToMs(t.validTimeTo));
 
-    const raw = t.rawTAF || t.rawOb || t.raw || t.text || "";
-    tafBlock.className = "tafBlock mono cat-unk";
-    tafBlock.textContent = raw || "No TAF text returned.";
+    tafmeta.textContent =
+      `Issued: ${formatMaybeISOorEpoch(issue)} • Valid: ${formatMaybeISOorEpoch(validFrom)}–${formatMaybeISOorEpoch(validTo)}`;
 
-    // leave your existing colored-line + bar logic intact if you re-add it;
-    // this block just ensures you at least see something if you broke a function name.
+    const raw = String(t.rawTAF || t.rawOb || t.raw || t.text || "").trim();
+    const lines = splitTafIntoLines(raw);
+
+    // Color each line using fcsts (consume queues for FM/TEMPO/etc in order)
+    const fcsts = Array.isArray(t.fcsts) ? t.fcsts : [];
+    const q = buildFcstQueues(fcsts);
+
+    const htmlLines = [];
+    for (const line of lines){
+      const upper = line.toUpperCase();
+      let f = null;
+
+      if (upper.startsWith("FM")) f = q.FM.shift() || null;
+      else if (upper.startsWith("TEMPO")) f = q.TEMPO.shift() || null;
+      else if (upper.startsWith("BECMG")) f = q.BECMG.shift() || null;
+      else if (upper.startsWith("PROB")) f = q.PROB.shift() || null;
+      else {
+        // Header or initial group → use BASE if available, else first fcst
+        f = q.BASE.shift() || fcsts[0] || null;
+      }
+
+      const cat = fcstCategory(f);
+      htmlLines.push(`<span class="tafLine ${catClass(cat)}">${escapeHTML(line)}</span>`);
+    }
+
+    tafBlock.className = "tafBlock mono";
+    tafBlock.innerHTML = htmlLines.join("");
+
+    // Build 8 × 3-hour segments for Next 24h
+    tafBarLabel.textContent = "Next 24h:";
+    tafBar.innerHTML = "";
+
+    const now = Date.now();
+    let startMs = now;
+
+    // Keep it within validity window if provided
+    if (Number.isFinite(validFrom)) startMs = Math.max(startMs, validFrom);
+    let endMs = startMs + 24 * 60 * 60 * 1000;
+    if (Number.isFinite(validTo)) endMs = Math.min(endMs, validTo);
+
+    // Always show 8 segments; if validity shorter, segments can show UNK
+    const segHours = 3;
+    const segMs = segHours * 60 * 60 * 1000;
+
+    for (let i=0; i<8; i++){
+      const a = startMs + i*segMs;
+      const b = a + segMs;
+
+      const f = findFcstForTime(fcsts, a);
+      const cat = fcstCategory(f);
+
+      const seg = document.createElement("div");
+      seg.className = `tafSeg ${segClass(cat)}`;
+      seg.title = `${prettyRangeLabel(a,b)} • ${cat}`;
+      tafBar.appendChild(seg);
+    }
+
   } catch(e){
     tafmeta.textContent = "";
     tafBlock.className = "tafBlock mono error";
     tafBlock.textContent = `ERROR loading TAF: ${e.message}`;
+    tafBar.innerHTML = "";
+    tafBarLabel.textContent = "Next 24h:";
   }
 }
 
@@ -609,6 +816,7 @@ function init(){
 
     setInterval(setClock, 10_000);
     setInterval(refreshAgeOnly, 30_000);
+
     setInterval(loadMetar, 60_000);
     setInterval(loadTaf,  5 * 60_000);
 
@@ -623,7 +831,5 @@ function init(){
 
 window.addEventListener("DOMContentLoaded", init);
 </script>
-
-  
 </body>
 </html>
