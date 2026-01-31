@@ -369,21 +369,25 @@
 
     const LAT = 38.95083;
     const LON = -95.66361;
+    
+    const WINDY_ZOOM = 8;
 
     const WINDY_RADAR_URL =
       "https://embed.windy.com/embed2.html" +
-      `?lat=${encodeURIComponent(LAT)}` +
-      `&lon=${encodeURIComponent(LON)}` +
-      `&detailLat=${encodeURIComponent(LAT)}` +
-      `&detailLon=${encodeURIComponent(LON)}` +
+      `?lat=${encodeURIComponent(CENTER_LAT)}` +
+      `&lon=${encodeURIComponent(CENTER_LON)}` +
+      `&detailLat=${encodeURIComponent(DETAIL_LAT)}` +
+      `&detailLon=${encodeURIComponent(DETAIL_LON)}` +
       "&width=100%&height=100%" +
-      "&zoom=9&level=surface" +
+      `&zoom=${encodeURIComponent(WINDY_ZOOM)}` +
+      "&level=surface" +
       "&overlay=rain" +
       "&product=ecmwf" +
       "&menu=&message=true&marker=true" +
       "&calendar=now&pressure=true" +
       "&type=map&location=coordinates&detail=true" +
       "&metricWind=default&metricTemp=default&radarRange=-1";
+
 
     // ====== STATE ======
     let lastObsMs = null;
