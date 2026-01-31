@@ -367,10 +367,17 @@
     const STATION = "KFOE";
     const PROXY_BASE = "https://kfoe-awc-proxy.oliversheley.workers.dev";
 
-    const LAT = 38.95083;
-    const LON = -95.66361;
-    
+    // KFOE (detail / marker point)
+    const DETAIL_LAT = 38.95083;
+    const DETAIL_LON = -95.66361;
+
+    // ✅ Map center point (zoomed-out focus) — set these to whatever you want
+    const CENTER_LAT = 39.10;     // example: more “regional” center
+    const CENTER_LON = -95.90;
+
+    // Zoom: smaller number = more zoomed out (try 7–10)
     const WINDY_ZOOM = 8;
+
 
     const WINDY_RADAR_URL =
       "https://embed.windy.com/embed2.html" +
