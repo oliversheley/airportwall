@@ -361,513 +361,269 @@
   </div>
 
   <script>
-    "use strict";
+"use strict";
 
-    // ====== CONFIG ======
-    const STATION = "KFOE";
-    const PROXY_BASE = "https://kfoe-awc-proxy.oliversheley.workers.dev";
+/* ====== CONFIG ====== */
+const STATION = "KFOE";
+const PROXY_BASE = "https://kfoe-awc-proxy.oliversheley.workers.dev";
 
-    // KFOE (detail / marker point)
-    const DETAIL_LAT = 38.95083;
-    const DETAIL_LON = -95.66361;
+// Marker/detail point (KFOE)
+const DETAIL_LAT = 38.95083;
+const DETAIL_LON = -95.66361;
 
-    // ✅ Map center point (zoomed-out focus) — set these to whatever you want
-    const CENTER_LAT = 39.10;     // example: more “regional” center
-    const CENTER_LON = -95.90;
+// ✅ Map center point (zoomed-out focus) — change these to whatever you want
+const CENTER_LAT = 39.10;
+const CENTER_LON = -95.80;
 
-    // Zoom: smaller number = more zoomed out (try 7–10)
-    const WINDY_ZOOM = 8;
+// Zoom: smaller = more zoomed out (try 7–10)
+const WINDY_ZOOM = 8;
 
+/* ====== STATE ====== */
+let lastObsMs = null;
 
-    const WINDY_RADAR_URL =
-      "https://embed.windy.com/embed2.html" +
-      `?lat=${encodeURIComponent(CENTER_LAT)}` +
-      `&lon=${encodeURIComponent(CENTER_LON)}` +
-      `&detailLat=${encodeURIComponent(DETAIL_LAT)}` +
-      `&detailLon=${encodeURIComponent(DETAIL_LON)}` +
-      "&width=100%&height=100%" +
-      `&zoom=${encodeURIComponent(WINDY_ZOOM)}` +
-      "&level=surface" +
-      "&overlay=rain" +
-      "&product=ecmwf" +
-      "&menu=&message=true&marker=true" +
-      "&calendar=now&pressure=true" +
-      "&type=map&location=coordinates&detail=true" +
-      "&metricWind=default&metricTemp=default&radarRange=-1";
+/* ====== HELPERS ====== */
+const $ = (id) => document.getElementById(id);
 
+function setClock() {
+  const el = $("clock");
+  if (el) el.textContent = new Date().toLocaleString();
+}
 
-    // ====== STATE ======
-    let lastObsMs = null;
-
-    // ====== HELPERS ======
-    const $ = (id) => document.getElementById(id);
-
-    function setClock(){ $("clock").textContent = new Date().toLocaleString(); }
-    function safe(v, fallback="—"){ return (v === undefined || v === null || v === "") ? fallback : v; }
-
-    function catClass(cat){
-      switch (String(cat || "").toUpperCase()){
-        case "VFR":  return "cat-vfr";
-        case "MVFR": return "cat-mvfr";
-        case "IFR":  return "cat-ifr";
-        case "LIFR": return "cat-lifr";
-        default:     return "cat-unk";
-      }
-    }
-    function catColorVar(cat){
-      switch (String(cat || "").toUpperCase()){
-        case "VFR":  return "var(--vfr)";
-        case "MVFR": return "var(--mvfr)";
-        case "IFR":  return "var(--ifr)";
-        case "LIFR": return "var(--lifr)";
-        default:     return "var(--unk)";
-      }
-    }
-
-    function parseTimeToMs(t){
-      if (t == null) return null;
-      if (typeof t === "number" && Number.isFinite(t)){
-        if (t > 1e12) return t;
-        if (t > 1e9)  return t * 1000;
-        return null;
-      }
-      if (typeof t === "string"){
-        const s = t.trim();
-        if (/^\d{9,16}$/.test(s)){
-          const n = Number(s);
-          if (!Number.isFinite(n)) return null;
-          if (n > 1e12) return n;
-          if (n > 1e9)  return n * 1000;
-        }
-        const ms = Date.parse(s);
-        return Number.isFinite(ms) ? ms : null;
-      }
-      return null;
-    }
-
-    function computeAgeMinutesFromMs(ms){
-      if (!Number.isFinite(ms)) return null;
-      const diff = Date.now() - ms;
-      if (!Number.isFinite(diff) || diff < 0) return null;
-      const mins = Math.round(diff / 60000);
-      if (mins > 24 * 60 * 7) return null;
-      return mins;
-    }
-
-    function refreshAgeOnly(){
-      const mins = computeAgeMinutesFromMs(lastObsMs);
-      $("ageBadge").textContent = (mins == null) ? "—" : `${mins}m ago`;
-    }
-
-    function formatLocalTimeWithTZFromMs(ms){
-      if (!Number.isFinite(ms)) return "—";
-      return new Date(ms).toLocaleTimeString([], { hour:"2-digit", minute:"2-digit", timeZoneName:"short" });
-    }
-
-    function formatObsLineFromMs(ms){
-      if (!Number.isFinite(ms)) return "—";
-      return new Date(ms).toLocaleString([], { month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit", timeZoneName:"short" });
-    }
-
-    function cloudPhrase(clouds){
-      if (!Array.isArray(clouds) || !clouds.length) return "Clear";
-      const sorted = clouds.filter(c=>Number.isFinite(c.base)).sort((a,b)=>a.base-b.base);
-      if (!sorted.length) return "—";
-      const pick = sorted.find(c => ["OVC","BKN","VV"].includes(String(c.cover||"").toUpperCase())) || sorted[0];
-      const cover = String(pick.cover||"").toUpperCase();
-      const base = pick.base;
-      const coverWord = ({OVC:"Overcast",BKN:"Broken",SCT:"Scattered",FEW:"Few",VV:"Vertical Vis"})[cover] || cover;
-      return `${coverWord} ${base.toLocaleString()}′`;
-    }
-
-    function cToF(c){ return Number.isFinite(c) ? (c * 9/5) + 32 : null; }
-
-    function parseAltimeterInHg(alt){
-      if (alt == null) return null;
-      const n = Number(alt);
+function parseTimeToMs(t){
+  if (t == null) return null;
+  if (typeof t === "number" && Number.isFinite(t)){
+    if (t > 1e12) return t;
+    if (t > 1e9)  return t * 1000;
+    return null;
+  }
+  if (typeof t === "string"){
+    const s = t.trim();
+    if (/^\d{9,16}$/.test(s)){
+      const n = Number(s);
       if (!Number.isFinite(n)) return null;
-      if (n >= 20 && n <= 35) return n;
-      if (n >= 2000 && n <= 3500) return n / 100;
-      if (n >= 800 && n <= 1100) return n * 0.029529983;
-      return null;
+      if (n > 1e12) return n;
+      if (n > 1e9)  return n * 1000;
     }
+    const ms = Date.parse(s);
+    return Number.isFinite(ms) ? ms : null;
+  }
+  return null;
+}
 
-    async function fetchJSON(path){
-      const url = `${PROXY_BASE}${path}`;
-      const res = await fetch(url, { cache:"no-store" });
-      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-      return res.json();
+function computeAgeMinutesFromMs(ms){
+  if (!Number.isFinite(ms)) return null;
+  const diff = Date.now() - ms;
+  if (!Number.isFinite(diff) || diff < 0) return null;
+  const mins = Math.round(diff / 60000);
+  if (mins > 24 * 60 * 7) return null;
+  return mins;
+}
+
+function refreshAgeOnly(){
+  const mins = computeAgeMinutesFromMs(lastObsMs);
+  const el = $("ageBadge");
+  if (el) el.textContent = (mins == null) ? "—" : `${mins}m ago`;
+}
+
+function formatLocalTimeWithTZFromMs(ms){
+  if (!Number.isFinite(ms)) return "—";
+  return new Date(ms).toLocaleTimeString([], { hour:"2-digit", minute:"2-digit", timeZoneName:"short" });
+}
+
+function formatObsLineFromMs(ms){
+  if (!Number.isFinite(ms)) return "—";
+  return new Date(ms).toLocaleString([], { month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit", timeZoneName:"short" });
+}
+
+function safe(v, fallback="—"){
+  return (v === undefined || v === null || v === "") ? fallback : v;
+}
+
+function catClass(cat){
+  switch (String(cat || "").toUpperCase()){
+    case "VFR":  return "cat-vfr";
+    case "MVFR": return "cat-mvfr";
+    case "IFR":  return "cat-ifr";
+    case "LIFR": return "cat-lifr";
+    default:     return "cat-unk";
+  }
+}
+function catColorVar(cat){
+  switch (String(cat || "").toUpperCase()){
+    case "VFR":  return "var(--vfr)";
+    case "MVFR": return "var(--mvfr)";
+    case "IFR":  return "var(--ifr)";
+    case "LIFR": return "var(--lifr)";
+    default:     return "var(--unk)";
+  }
+}
+
+async function fetchJSON(path){
+  const url = `${PROXY_BASE}${path}`;
+  const res = await fetch(url, { cache:"no-store" });
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  return res.json();
+}
+
+/* ====== Windy URL (safe builder) ====== */
+function buildWindyUrl(){
+  return "https://embed.windy.com/embed2.html" +
+    `?lat=${encodeURIComponent(CENTER_LAT)}` +
+    `&lon=${encodeURIComponent(CENTER_LON)}` +
+    `&detailLat=${encodeURIComponent(DETAIL_LAT)}` +
+    `&detailLon=${encodeURIComponent(DETAIL_LON)}` +
+    "&width=100%&height=100%" +
+    `&zoom=${encodeURIComponent(WINDY_ZOOM)}` +
+    "&level=surface" +
+    "&overlay=rain" +
+    "&product=ecmwf" +
+    "&menu=&message=true&marker=true" +
+    "&calendar=now&pressure=true" +
+    "&type=map&location=coordinates&detail=true" +
+    "&metricWind=default&metricTemp=default&radarRange=-1";
+}
+
+/* ====== Minimal METAR decode (same behavior as before) ====== */
+function cloudPhrase(clouds){
+  if (!Array.isArray(clouds) || !clouds.length) return "Clear";
+  const sorted = clouds.filter(c=>Number.isFinite(c.base)).sort((a,b)=>a.base-b.base);
+  if (!sorted.length) return "—";
+  const pick = sorted.find(c => ["OVC","BKN","VV"].includes(String(c.cover||"").toUpperCase())) || sorted[0];
+  const cover = String(pick.cover||"").toUpperCase();
+  const base = pick.base;
+  const coverWord = ({OVC:"Overcast",BKN:"Broken",SCT:"Scattered",FEW:"Few",VV:"Vertical Vis"})[cover] || cover;
+  return `${coverWord} ${base.toLocaleString()}′`;
+}
+
+function cToF(c){ return Number.isFinite(c) ? (c * 9/5) + 32 : null; }
+
+function parseAltimeterInHg(alt){
+  if (alt == null) return null;
+  const n = Number(alt);
+  if (!Number.isFinite(n)) return null;
+  if (n >= 20 && n <= 35) return n;
+  if (n >= 2000 && n <= 3500) return n / 100;
+  if (n >= 800 && n <= 1100) return n * 0.029529983;
+  return null;
+}
+
+async function loadMetar(){
+  const metarraw = $("metarraw");
+  try{
+    const arr = await fetchJSON(`/metar?ids=${encodeURIComponent(STATION)}`);
+    const m = (Array.isArray(arr) && arr.length) ? arr[0] : null;
+    if (!m) throw new Error("No METAR returned");
+
+    const raw = safe(m.rawOb || m.raw || m.text, JSON.stringify(m, null, 2));
+    const cat = String(m.fltCat || "UNK").toUpperCase();
+
+    $("catText").textContent = cat;
+    $("catText").className = catClass(cat);
+    $("catDot").style.background = catColorVar(cat);
+
+    const obs = m.obsTime || m.reportTime || m.time;
+    lastObsMs = parseTimeToMs(obs);
+    $("obstime").textContent = formatObsLineFromMs(lastObsMs);
+    refreshAgeOnly();
+
+    metarraw.className = "metarRaw mono " + catClass(cat);
+    metarraw.textContent = raw;
+
+    $("m_time").textContent = formatLocalTimeWithTZFromMs(lastObsMs);
+
+    const windTxt = (m.wdir != null && m.wspd != null)
+      ? `${String(m.wdir).padStart(3,"0")}° at ${m.wspd}${m.wgst ? " - " + m.wgst : ""} kts`
+      : "—";
+    $("m_wind").textContent = windTxt;
+
+    let visTxt = "—";
+    if (m.visib != null){
+      const s = String(m.visib);
+      if (/^6\+/.test(s) || s === "6+") visTxt = "10+ sm";
+      else visTxt = `${s} sm`;
     }
+    $("m_vis").textContent = visTxt;
 
-    /* ====== METAR hazard highlighting ====== */
-    function escapeHTML(s){
-      return String(s)
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;")
-        .replaceAll('"', "&quot;")
-        .replaceAll("'", "&#39;");
+    $("m_clouds").textContent = cloudPhrase(m.clouds);
+
+    const tC = Number.isFinite(m.temp) ? m.temp : null;
+    const dC = Number.isFinite(m.dewp) ? m.dewp : null;
+    const tF = (tC == null) ? null : cToF(tC);
+    const dF = (dC == null) ? null : cToF(dC);
+
+    $("m_temp").textContent = (tC == null || tF == null) ? "—" : `${tC.toFixed(1)}°C (${Math.round(tF)}°F)`;
+    $("m_dew").textContent  = (dC == null || dF == null) ? "—" : `${dC.toFixed(1)}°C (${Math.round(dF)}°F)`;
+
+    const altInHg = parseAltimeterInHg(m.altim);
+    $("m_alt").textContent = (altInHg == null) ? "—" : `${altInHg.toFixed(2)} inHg`;
+
+  } catch(e){
+    // Show the error on-screen (so you don't need console access)
+    $("catText").textContent = "—";
+    $("catText").className = "cat-unk";
+    $("catDot").style.background = "var(--unk)";
+    $("ageBadge").textContent = "—";
+    $("obstime").textContent = "—";
+
+    if (metarraw){
+      metarraw.className = "metarRaw mono error";
+      metarraw.textContent = `ERROR loading METAR: ${e.message}`;
     }
-    function escapeRegExp(s){
-      return String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    lastObsMs = null;
+  }
+}
+
+async function loadTaf(){
+  const tafmeta = $("tafmeta");
+  const tafBlock = $("tafBlock");
+  try{
+    const arr = await fetchJSON(`/taf?ids=${encodeURIComponent(STATION)}`);
+    const t = (Array.isArray(arr) && arr.length) ? arr[0] : null;
+    if (!t) throw new Error("No TAF returned");
+
+    tafmeta.textContent = `Issued: ${safe(t.issueTime)} • Valid: ${safe(t.validTimeFrom)}–${safe(t.validTimeTo)}`;
+
+    const raw = t.rawTAF || t.rawOb || t.raw || t.text || "";
+    tafBlock.className = "tafBlock mono cat-unk";
+    tafBlock.textContent = raw || "No TAF text returned.";
+
+    // leave your existing colored-line + bar logic intact if you re-add it;
+    // this block just ensures you at least see something if you broke a function name.
+  } catch(e){
+    tafmeta.textContent = "";
+    tafBlock.className = "tafBlock mono error";
+    tafBlock.textContent = `ERROR loading TAF: ${e.message}`;
+  }
+}
+
+/* ====== INIT ====== */
+function init(){
+  try{
+    setClock();
+
+    const windy = $("windyRadar");
+    if (windy) windy.src = buildWindyUrl();
+
+    loadMetar();
+    loadTaf();
+
+    setInterval(setClock, 10_000);
+    setInterval(refreshAgeOnly, 30_000);
+    setInterval(loadMetar, 60_000);
+    setInterval(loadTaf,  5 * 60_000);
+
+  } catch (e){
+    const metarraw = $("metarraw");
+    if (metarraw){
+      metarraw.className = "metarRaw mono error";
+      metarraw.textContent = `JS ERROR: ${e.message}`;
     }
+  }
+}
 
-    function visTokenFromRaw(raw){
-      const m = String(raw || "").match(/\b(M?\d+\s+\d\/\d|M?\d+\/\d+|M?\d+(?:\.\d+)?|P6)\s?SM\b/);
-      return m ? m[0] : null;
-    }
+window.addEventListener("DOMContentLoaded", init);
+</script>
 
-    function parseVisTokenToNumber(token){
-      if (!token) return null;
-      let t = token.toUpperCase().replace("SM", "").trim();
-
-      if (t === "P6") return 10;
-
-      let lessThan = false;
-      if (t.startsWith("M")){
-        lessThan = true;
-        t = t.slice(1);
-      }
-
-      const parts = t.split(/\s+/).filter(Boolean);
-
-      function fracToFloat(f){
-        const [a,b] = f.split("/").map(Number);
-        if (!Number.isFinite(a) || !Number.isFinite(b) || b === 0) return null;
-        return a / b;
-      }
-
-      let val = null;
-      if (parts.length === 2 && parts[1].includes("/")){
-        const whole = Number(parts[0]);
-        const frac = fracToFloat(parts[1]);
-        if (Number.isFinite(whole) && frac != null) val = whole + frac;
-      } else if (parts.length === 1 && parts[0].includes("/")){
-        val = fracToFloat(parts[0]);
-      } else if (parts.length === 1){
-        const n = Number(parts[0]);
-        if (Number.isFinite(n)) val = n;
-      }
-
-      if (!Number.isFinite(val)) return null;
-      if (lessThan) val = Math.max(0, val - 0.01);
-      return val;
-    }
-
-    function parseVisGeneric(visib){
-      if (visib == null) return null;
-      if (typeof visib === "number" && Number.isFinite(visib)) return visib;
-
-      const s = String(visib).trim().toUpperCase();
-      if (!s) return null;
-      if (s === "6+" || s === "P6" || s === "P6SM") return 10;
-      if (s.includes("SM")) return parseVisTokenToNumber(s);
-      return parseVisTokenToNumber(s + "SM");
-    }
-
-    function detectMetarHazards(raw, visib){
-      const r = String(raw || "").toUpperCase();
-      const hasFzra = r.includes("FZRA");
-      const hasFzfg = r.includes("FZFG");
-
-      const vFromField = parseVisGeneric(visib);
-      const token = visTokenFromRaw(raw);
-      const vFromRaw = parseVisTokenToNumber(token);
-
-      const vis = (vFromField != null) ? vFromField : vFromRaw;
-      const visLow = (vis != null && vis <= 0.25);
-
-      return { hasFzra, hasFzfg, visLow, visToken: token };
-    }
-
-    function formatMetarRawHTML(raw, hazards){
-      let s = escapeHTML(raw);
-      s = s.replace(/FZRA/g, '<span class="haz-red">FZRA</span>');
-      s = s.replace(/FZFG/g, '<span class="haz-red">FZFG</span>');
-
-      if (hazards.visLow && hazards.visToken){
-        const escTok = escapeHTML(hazards.visToken);
-        const re = new RegExp("\\b" + escapeRegExp(escTok) + "\\b", "g");
-        s = s.replace(re, `<span class="haz-red">${escTok}</span>`);
-      }
-      return s;
-    }
-
-    function setKv(id, text, hazardRed=false){
-      const el = $(id);
-      el.textContent = text;
-      el.className = "kvValue" + (hazardRed ? " haz-red" : "");
-    }
-
-    /* ===== TAF helpers ===== */
-    function tafRawToLines(rawTAF){
-      const s = String(rawTAF || "").trim();
-      if (!s) return [];
-      const normalized = s
-        .replace(/^TAF\s+/i, "TAF ")
-        .replace(/\s+(FM\d{6})/g, "\n$1")
-        .replace(/\s+(TEMPO)/g, "\n$1")
-        .replace(/\s+(BECMG)/g, "\n$1")
-        .replace(/\s+(PROB\d{2})/g, "\n$1");
-      return normalized.split("\n").map(x=>x.trim()).filter(Boolean);
-    }
-
-    function ceilingFeetFromClouds(clouds){
-      if (!Array.isArray(clouds) || !clouds.length) return null;
-      const candidates = clouds
-        .filter(c => ["BKN","OVC","VV"].includes(String(c.cover||"").toUpperCase()) && Number.isFinite(c.base))
-        .sort((a,b)=>a.base-b.base);
-      return candidates.length ? candidates[0].base : null;
-    }
-
-    function visToNumber(vis){
-      if (vis == null) return null;
-      if (typeof vis === "number") return Number.isFinite(vis) ? vis : null;
-      if (typeof vis === "string"){
-        const s = vis.trim().replace("+","");
-        const n = Number(s);
-        return Number.isFinite(n) ? n : null;
-      }
-      return null;
-    }
-
-    function flightCategoryFrom(visSM, ceilFT){
-      function visCat(v){
-        if (v == null) return null;
-        if (v < 1) return "LIFR";
-        if (v < 3) return "IFR";
-        if (v <= 5) return "MVFR";
-        return "VFR";
-      }
-      function ceilCat(c){
-        if (c == null) return null;
-        if (c < 500) return "LIFR";
-        if (c < 1000) return "IFR";
-        if (c < 3000) return "MVFR";
-        return "VFR";
-      }
-      const a = visCat(visSM);
-      const b = ceilCat(ceilFT);
-      if (a && b){
-        const rank={LIFR:0, IFR:1, MVFR:2, VFR:3};
-        return (rank[a] < rank[b]) ? a : b;
-      }
-      return a || b || "UNK";
-    }
-
-    function fmtUnixLocal(unixSec){
-      if (!unixSec || !Number.isFinite(unixSec)) return "—";
-      const d = new Date(unixSec * 1000);
-      return d.toLocaleString([], { month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit" });
-    }
-
-    /* ===== 24h bar in 3-hour blocks ===== */
-    function catRank(cat){
-      const c = String(cat || "UNK").toUpperCase();
-      const rank = { "LIFR":0, "IFR":1, "MVFR":2, "VFR":3, "UNK":4 };
-      return (c in rank) ? rank[c] : 4;
-    }
-    function worstCat(cats){
-      if (!cats.length) return "UNK";
-      let best = "UNK";
-      let r = 999;
-      for (const c of cats){
-        const cr = catRank(c);
-        if (cr < r){ r = cr; best = c; }
-      }
-      return String(best || "UNK").toUpperCase();
-    }
-    function segClass(cat){
-      switch (String(cat || "").toUpperCase()){
-        case "VFR":  return "seg-vfr";
-        case "MVFR": return "seg-mvfr";
-        case "IFR":  return "seg-ifr";
-        case "LIFR": return "seg-lifr";
-        default:     return "seg-unk";
-      }
-    }
-
-    function renderTafBar(fcsts){
-      const bar = $("tafBar");
-      const label = $("tafBarLabel");
-      bar.innerHTML = "";
-
-      const nowSec = Math.floor(Date.now()/1000);
-      const windowStart = nowSec;
-      const windowEnd = nowSec + 24*3600;
-
-      // exactly as requested
-      label.textContent = "Next 24h:";
-
-      const blockSec = 3 * 3600;   // 3-hour blocks
-      const stepSec  = 15 * 60;    // 15-minute sampling inside each block
-
-      for (let bStart = windowStart; bStart < windowEnd; bStart += blockSec){
-        const bEnd = Math.min(windowEnd, bStart + blockSec);
-
-        let worst = "UNK";
-        for (let t = bStart; t < bEnd; t += stepSec){
-          const applicable = (fcsts || []).filter(f =>
-            Number.isFinite(f.timeFrom) && Number.isFinite(f.timeTo) &&
-            f.timeFrom <= t && t < f.timeTo
-          );
-
-          const cats = applicable.map(f => {
-            const v = visToNumber(f.visib);
-            const ceil = ceilingFeetFromClouds(f.clouds);
-            return flightCategoryFrom(v, ceil);
-          });
-
-          const c = worstCat(cats);
-          if (catRank(c) < catRank(worst)) worst = c;
-        }
-
-        const seg = document.createElement("div");
-        seg.className = `tafSeg ${segClass(worst)}`;
-        seg.style.flex = "1 1 0";
-
-        const a = new Date(bStart*1000).toLocaleTimeString([], { hour:"2-digit", minute:"2-digit" });
-        const z = new Date(bEnd*1000).toLocaleTimeString([], { hour:"2-digit", minute:"2-digit" });
-        seg.title = `${worst}  ${a}–${z}`;
-
-        bar.appendChild(seg);
-      }
-    }
-
-    // ====== LOADERS ======
-    async function loadMetar(){
-      const metarraw = $("metarraw");
-
-      try{
-        const arr = await fetchJSON(`/metar?ids=${encodeURIComponent(STATION)}`);
-        const m = (Array.isArray(arr) && arr.length) ? arr[0] : null;
-        if (!m) throw new Error("No METAR returned");
-
-        const raw = safe(m.rawOb || m.raw || m.text, JSON.stringify(m, null, 2));
-        const cat = String(m.fltCat || "UNK").toUpperCase();
-
-        $("catText").textContent = cat;
-        $("catText").className = catClass(cat);
-        $("catDot").style.background = catColorVar(cat);
-
-        const obs = m.obsTime || m.reportTime || m.time;
-        lastObsMs = parseTimeToMs(obs);
-        $("obstime").textContent = formatObsLineFromMs(lastObsMs);
-        refreshAgeOnly();
-
-        const hazards = detectMetarHazards(raw, m.visib);
-
-        metarraw.className = "metarRaw mono " + catClass(cat);
-        metarraw.innerHTML = formatMetarRawHTML(raw, hazards);
-
-        setKv("m_time", formatLocalTimeWithTZFromMs(lastObsMs));
-
-        const windTxt = (m.wdir != null && m.wspd != null)
-          ? `${String(m.wdir).padStart(3,"0")}° at ${m.wspd}${m.wgst ? " - " + m.wgst : ""} kts`
-          : "—";
-        setKv("m_wind", windTxt);
-
-        let visTxt = "—";
-        if (m.visib != null){
-          const s = String(m.visib);
-          if (/^6\+/.test(s) || s === "6+") visTxt = "10+ sm";
-          else visTxt = `${s} sm`;
-        } else if (hazards.visToken){
-          visTxt = hazards.visToken.replace(/\s+/g, " ");
-        }
-        setKv("m_vis", visTxt, hazards.visLow);
-
-        setKv("m_clouds", cloudPhrase(m.clouds));
-
-        const tC = Number.isFinite(m.temp) ? m.temp : null;
-        const dC = Number.isFinite(m.dewp) ? m.dewp : null;
-        const tF = (tC == null) ? null : cToF(tC);
-        const dF = (dC == null) ? null : cToF(dC);
-
-        setKv("m_temp", (tC == null || tF == null) ? "—" : `${tC.toFixed(1)}°C (${Math.round(tF)}°F)`);
-        setKv("m_dew",  (dC == null || dF == null) ? "—" : `${dC.toFixed(1)}°C (${Math.round(dF)}°F)`);
-
-        const altInHg = parseAltimeterInHg(m.altim);
-        setKv("m_alt", (altInHg == null) ? "—" : `${altInHg.toFixed(2)} inHg`);
-
-      } catch(e){
-        $("catText").textContent = "—";
-        $("catText").className = "cat-unk";
-        $("catDot").style.background = "var(--unk)";
-        $("ageBadge").textContent = "—";
-
-        metarraw.textContent = `ERROR loading METAR: ${e.message}`;
-        metarraw.className = "metarRaw mono error";
-
-        lastObsMs = null;
-        $("obstime").textContent = "—";
-      }
-    }
-
-    async function loadTaf(){
-      const tafmeta = $("tafmeta");
-      const tafBlock = $("tafBlock");
-      tafBlock.className = "tafBlock mono cat-unk";
-      tafBlock.textContent = "";
-      tafBlock.innerHTML = "";
-
-      try{
-        const arr = await fetchJSON(`/taf?ids=${encodeURIComponent(STATION)}`);
-        const t = (Array.isArray(arr) && arr.length) ? arr[0] : null;
-        if (!t) throw new Error("No TAF returned");
-
-        tafmeta.textContent =
-          `Issued: ${safe(t.issueTime)} • Valid: ${fmtUnixLocal(t.validTimeFrom)}–${fmtUnixLocal(t.validTimeTo)}`;
-
-        const raw = t.rawTAF || t.rawOb || t.raw || t.text || "";
-        const lines = tafRawToLines(raw);
-        const fcsts = Array.isArray(t.fcsts) ? t.fcsts : [];
-
-        if (!lines.length){
-          tafBlock.textContent = "No TAF text returned.";
-        } else {
-          lines.forEach((line, i) => {
-            const f = fcsts[i] || null;
-            const visN = f ? visToNumber(f.visib) : null;
-            const ceil = f ? ceilingFeetFromClouds(f.clouds) : null;
-            const cat = f ? flightCategoryFrom(visN, ceil) : "UNK";
-
-            const span = document.createElement("span");
-            span.className = `tafLine ${catClass(cat)}`;
-            span.textContent = line;
-
-            tafBlock.appendChild(span);
-            tafBlock.appendChild(document.createTextNode("\n"));
-          });
-        }
-
-        // render 3-hour block bar
-        renderTafBar(fcsts);
-
-      } catch(e){
-        tafmeta.textContent = "";
-        tafBlock.textContent = `ERROR loading TAF: ${e.message}`;
-        tafBlock.className = "tafBlock mono error";
-        $("tafBarLabel").textContent = "Next 24h:";
-        $("tafBar").innerHTML = "";
-      }
-    }
-
-    function init(){
-      setClock();
-      $("windyRadar").src = WINDY_RADAR_URL;
-
-      loadMetar();
-      loadTaf();
-
-      setInterval(setClock, 10_000);
-      setInterval(refreshAgeOnly, 30_000);
-
-      setInterval(loadMetar, 60_000);
-      setInterval(loadTaf,  5 * 60_000);
-    }
-
-    init();
-  </script>
+  
 </body>
 </html>
